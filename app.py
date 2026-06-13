@@ -5,6 +5,7 @@ import plotly.express as px
 from utils.data_loader import (
     cargar_operaciones,
     cargar_clientes,
+    cargar_ciiu,
     cruzar_bases,
     obtener_lista_traders,
     filtrar_por_trader,
@@ -21,10 +22,11 @@ st.title("📊 Mesa de Clientes - Dashboard de Priorización")
 try:
     df_ops = cargar_operaciones()
     df_clientes = cargar_clientes()
-    df = cruzar_bases(df_ops, df_clientes)
+    df_ciiu = cargar_ciiu()
+    df = cruzar_bases(df_ops, df_clientes, df_ciiu)
 except FileNotFoundError as e:
     st.error(f"No se encontraron los archivos de datos: {e}")
-    st.info("Asegúrate de tener 'operaciones.xlsx' y 'clientes.xlsx' en la carpeta /data")
+    st.info("Asegúrate de tener 'operaciones.xlsx', 'clientes.xlsx' y 'ciiu.xlsx' en la carpeta /data")
     st.stop()
 
 # -----------------------------------------------------------------
