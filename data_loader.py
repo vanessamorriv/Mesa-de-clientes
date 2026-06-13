@@ -7,9 +7,9 @@ import pandas as pd
 # Cuando tengas el enlace público de OneDrive, reemplaza estas rutas
 # por las URLs de descarga directa (ej: "https://onedrive.live.com/download?...")
 
-RUTA_OPERACIONES = "data/operaciones.xlsx"
-RUTA_CLIENTES = "data/clientes.xlsx"
-RUTA_CIIU = "data/ciiu.xlsx"
+RUTA_OPERACIONES = "https://docs.google.com/spreadsheets/d/1w_SMaC88aWgV0ZMG6kI17qu8I6ToCvgV/edit?usp=sharing&ouid=109201281467813898095&rtpof=true&sd=true"
+RUTA_CLIENTES = "https://docs.google.com/spreadsheets/d/1-BoqjiefDtqQ0ILX-JFx1yZ30nHLmHQF/edit?usp=sharing&ouid=109201281467813898095&rtpof=true&sd=true"
+RUTA_CIIU = "https://docs.google.com/spreadsheets/d/10n3IllrQRzMWzOcAL1tZ_cmvjXIzAze4/edit?usp=sharing&ouid=109201281467813898095&rtpof=true&sd=true"
 
 
 def _normalizar_columnas(df: pd.DataFrame) -> pd.DataFrame:
