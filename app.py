@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
 
 from data_loader import (
     cargar_operaciones,
@@ -11,116 +10,172 @@ from data_loader import (
     obtener_lista_traders,
     filtrar_por_trader,
 )
+from priorizacion import generar_priorizacion
 
-# -----------------------------------------------------------------
-# CONFIGURACIÓN DE PÁGINA
-# -----------------------------------------------------------------
+
+# =============================================================================
+# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS
+# =============================================================================
+
 st.set_page_config(
     page_title="Mesa de Clientes – Itaú",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# -----------------------------------------------------------------
-# ESTILOS GLOBALES — Paleta Itaú (blanco + naranja)
-# -----------------------------------------------------------------
-st.markdown("""
+# Paleta de marca Itaú: blanco + naranja
+COLOR_NARANJA = "#FF6900"
+COLOR_NARANJA_CLARO = "#FFB266"
+COLOR_GRIS = "#8A8A8A"
+COLOR_GRIS_CLARO = "#F0F0F0"
+
+st.markdown(f"""
 <style>
-    /* Fuentes y fondo */
-    html, body, [class*="css"] {
+    /* ---------- Fondo y tipografía general ---------- */
+    html, body, [class*="css"] {{
         font-family: 'Segoe UI', sans-serif;
         background-color: #FFFFFF;
-    }
+    }}
 
-    /* Sidebar */
-    section[data-testid="stSidebar"] {
+    /* ---------- Sidebar ---------- */
+    section[data-testid="stSidebar"] {{
         background-color: #FFFFFF;
-        border-right: 1px solid #F0F0F0;
-    }
-    section[data-testid="stSidebar"] * {
+        border-right: 1px solid {COLOR_GRIS_CLARO};
+    }}
+    section[data-testid="stSidebar"] * {{
         color: #1A1A1A !important;
-    }
+    }}
     section[data-testid="stSidebar"] h2,
-    section[data-testid="stSidebar"] h3 {
-        color: #FF6900 !important;
-    }
+    section[data-testid="stSidebar"] h3 {{
+        color: {COLOR_NARANJA} !important;
+    }}
 
-    /* Tarjetas de métricas */
-    div[data-testid="metric-container"] {
+    /* ---------- Tarjetas de métricas (st.metric) ---------- */
+    div[data-testid="metric-container"] {{
         background-color: #FFFFFF;
         border: 1px solid #FFD9B8;
         border-radius: 10px;
         padding: 16px;
         box-shadow: 0 1px 4px rgba(255,105,0,0.06);
-    }
+    }}
 
-    /* Tarjetas de priorización */
-    .cliente-card {
+    /* ---------- Tarjeta de cliente (lista de priorización) ---------- */
+    .tarjeta-cliente {{
         background: #FFFFFF;
-        border: 1px solid #F0F0F0;
-        border-left: 5px solid #FF6900;
-        border-radius: 8px;
-        padding: 14px 18px;
-        margin-bottom: 10px;
+        border: 1px solid {COLOR_GRIS_CLARO};
+        border-left: 6px solid {COLOR_NARANJA};
+        border-radius: 10px;
+        padding: 16px 20px;
+        margin-bottom: 14px;
         box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-    }
-    .cliente-card.media {
-        border-left-color: #FFA94D;
-    }
-    .cliente-card.baja {
-        border-left-color: #BDBDBD;
-    }
-    .cliente-nombre {
+    }}
+
+    .tarjeta-encabezado {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+    }}
+    .tarjeta-titulo {{
         font-size: 16px;
         font-weight: 700;
         color: #1A1A1A;
-    }
-    .cliente-puntaje {
+    }}
+    .tarjeta-puntaje {{
+        font-size: 22px;
+        font-weight: 800;
+        color: {COLOR_NARANJA};
+    }}
+    .tarjeta-puntaje small {{
+        font-size: 12px;
+        font-weight: 400;
+        color: {COLOR_GRIS};
+    }}
+
+    /* ---------- Bloques internos de la tarjeta ---------- */
+    .bloque-datos {{
+        display: flex;
+        gap: 24px;
+        flex-wrap: wrap;
+        margin: 8px 0;
         font-size: 13px;
-        color: #8A8A8A;
-        margin-top: 2px;
-    }
-    .cliente-motivo {
+        color: #4A4A4A;
+    }}
+    .bloque-datos b {{
+        color: #1A1A1A;
+    }}
+
+    .bloque-oferta {{
+        background: #FFF6EE;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-top: 10px;
         font-size: 13px;
-        color: #5A5A5A;
-        margin-top: 6px;
-    }
-    .badge {
+        color: #1A1A1A;
+    }}
+    .bloque-oferta b {{
+        color: {COLOR_NARANJA};
+    }}
+
+    /* ---------- Etiquetas (badges) de necesidades ---------- */
+    .badge {{
         display: inline-block;
-        padding: 2px 10px;
+        padding: 3px 12px;
         border-radius: 12px;
         font-size: 11px;
         font-weight: 600;
-        margin-right: 6px;
-        margin-top: 6px;
-    }
-    .badge-rojo { background: #FFE3D1; color: #D2480C; }
-    .badge-naranja { background: #FFF1E0; color: #FF6900; }
-    .badge-verde { background: #F0F0F0; color: #5A5A5A; }
-    .badge-azul { background: #FFEDD9; color: #B85400; }
+        margin: 6px 6px 0 0;
+    }}
+    .badge-alerta     {{ background: #FFE3D1; color: #D2480C; }}
+    .badge-oportunidad {{ background: #FFF1E0; color: {COLOR_NARANJA}; }}
+    .badge-fidelidad  {{ background: #F0F0F0; color: #5A5A5A; }}
+    .badge-nuevo      {{ background: #FFEDD9; color: #B85400; }}
+    .badge-neutral    {{ background: #F0F0F0; color: #8A8A8A; }}
 
-    /* Títulos de sección */
-    .seccion-titulo {
-        font-size: 18px;
+    /* ---------- Títulos de sección ---------- */
+    .titulo-seccion {{
+        font-size: 19px;
         font-weight: 700;
         color: #1A1A1A;
-        margin: 24px 0 12px 0;
-        padding-bottom: 6px;
-        border-bottom: 2px solid #FF6900;
-    }
+        margin: 28px 0 6px 0;
+        padding-bottom: 8px;
+        border-bottom: 3px solid {COLOR_NARANJA};
+    }}
+    .subtitulo-seccion {{
+        font-size: 13px;
+        color: {COLOR_GRIS};
+        margin-bottom: 16px;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
-# -----------------------------------------------------------------
-# CARGA DE DATOS
-# -----------------------------------------------------------------
+
+# Mapa de tipo de necesidad -> clase CSS del badge
+BADGE_CLASES = {
+    "alerta": "badge-alerta",
+    "oportunidad": "badge-oportunidad",
+    "fidelidad": "badge-fidelidad",
+    "nuevo": "badge-nuevo",
+    "neutral": "badge-neutral",
+}
+
+
+# =============================================================================
+# 2. CARGA DE DATOS
+# =============================================================================
+
 @st.cache_data(ttl=3600)
-def cargar_todo():
+def cargar_datos_consolidados() -> pd.DataFrame:
+    """
+    Carga las 3 bases originales (Operaciones, Clientes/BUC, CIIU),
+    convierte la fecha a un formato legible, y devuelve todo cruzado
+    en un solo DataFrame.
+    """
     df_ops = cargar_operaciones()
     df_clientes = cargar_clientes()
     df_ciiu = cargar_ciiu()
 
-    # Convertir fecha de formato numérico Excel a fecha real
+    # La fecha viene en formato numérico de Excel (ej: 43832) -> convertir
     if "Fecha" in df_ops.columns:
         df_ops["Fecha"] = pd.to_datetime(
             df_ops["Fecha"], origin="1899-12-30", unit="D", errors="coerce"
@@ -128,249 +183,222 @@ def cargar_todo():
 
     return cruzar_bases(df_ops, df_clientes, df_ciiu)
 
+
 try:
-    df = cargar_todo()
+    df = cargar_datos_consolidados()
 except Exception as e:
-    st.error(f"Error al cargar los datos: {e}")
+    st.error(f"No se pudieron cargar los datos: {e}")
+    st.info("Verifica que los 3 enlaces en data_loader.py estén activos y compartidos correctamente.")
     st.stop()
+
 
 COLUMNA_TRADER = "Cod_Cartera"
 
 if COLUMNA_TRADER not in df.columns:
-    st.error(f"No se encontró la columna '{COLUMNA_TRADER}' en los datos.")
+    st.error(f"No se encontró la columna '{COLUMNA_TRADER}' en los datos consolidados.")
     st.stop()
 
-traders = obtener_lista_traders(df, COLUMNA_TRADER)
-
-# -----------------------------------------------------------------
-# FUNCIÓN DE PRIORIZACIÓN
-# -----------------------------------------------------------------
-def calcular_prioridad(df_trader: pd.DataFrame) -> pd.DataFrame:
-    """
-    Genera un puntaje 0–100 por cliente basado en:
-    - 40% días sin operar (más días = más urgente)
-    - 40% % operaciones en Mercado (más % = más oportunidad)
-    - 20% volumen histórico (más monto = más impacto)
-    """
-    hoy = pd.Timestamp.now()
-    resumen = []
-
-    for nit, grupo in df_trader.groupby("NIT"):
-        # Nombre del cliente (si existe)
-        nombre = nit
-
-        # Factor 1: días sin operar
-        if "Fecha" in grupo.columns and grupo["Fecha"].notna().any():
-            ultima_op = grupo["Fecha"].max()
-            dias_sin_operar = (hoy - ultima_op).days
-        else:
-            dias_sin_operar = 999
-
-        # Factor 2: % en Mercado
-        if "Entidad" in grupo.columns:
-            total_ops = len(grupo)
-            ops_mercado = grupo["Entidad"].str.upper().eq("MERCADO").sum()
-            pct_mercado = (ops_mercado / total_ops * 100) if total_ops > 0 else 0
-        else:
-            pct_mercado = 0
-
-        # Factor 3: Volumen total
-        if "Monto_Total_" in grupo.columns:
-            monto_total = grupo["Monto_Total_"].sum()
-        else:
-            monto_total = 0
-
-        resumen.append({
-            "NIT": nit,
-            "Nombre": nombre,
-            "Dias_Sin_Operar": dias_sin_operar,
-            "Pct_Mercado": round(pct_mercado, 1),
-            "Monto_Total": monto_total,
-            "N_Operaciones": len(grupo),
-        })
-
-    df_res = pd.DataFrame(resumen)
-    if df_res.empty:
-        return df_res
-
-    # Normalizar cada factor entre 0 y 1
-    def norm(serie):
-        mn, mx = serie.min(), serie.max()
-        return (serie - mn) / (mx - mn) if mx > mn else pd.Series([0.5] * len(serie), index=serie.index)
-
-    df_res["score_dias"]   = norm(df_res["Dias_Sin_Operar"]) * 40
-    df_res["score_mercado"] = norm(df_res["Pct_Mercado"])    * 40
-    df_res["score_monto"]   = norm(df_res["Monto_Total"])    * 20
-    df_res["Puntaje"] = (df_res["score_dias"] + df_res["score_mercado"] + df_res["score_monto"]).round(1)
-
-    return df_res.sort_values("Puntaje", ascending=False).reset_index(drop=True)
+lista_traders = obtener_lista_traders(df, COLUMNA_TRADER)
 
 
-def inferir_necesidades(row) -> list:
-    """Infiere posibles necesidades del cliente basadas en sus métricas."""
-    necesidades = []
-    if row["Dias_Sin_Operar"] > 30:
-        necesidades.append(("🔁 Reactivación", "badge-rojo"))
-    if row["Pct_Mercado"] > 50:
-        necesidades.append(("🏦 Retención – opera con competencia", "badge-naranja"))
-    if row["Pct_Mercado"] < 30 and row["N_Operaciones"] > 3:
-        necesidades.append(("⭐ Cliente fiel – ofrecer nuevos productos", "badge-verde"))
-    if row["N_Operaciones"] == 1:
-        necesidades.append(("🆕 Cliente nuevo – seguimiento inicial", "badge-azul"))
-    if not necesidades:
-        necesidades.append(("✅ Sin alertas urgentes", "badge-verde"))
-    return necesidades
+# =============================================================================
+# 3. SIDEBAR — selección de trader (con buscador)
+# =============================================================================
 
-
-def prioridad_clase(puntaje: float) -> str:
-    if puntaje >= 66:
-        return "alta"
-    elif puntaje >= 33:
-        return " media"
-    else:
-        return " baja"
-
-
-# -----------------------------------------------------------------
-# SIDEBAR – SELECCIÓN DE TRADER
-# -----------------------------------------------------------------
 with st.sidebar:
     st.markdown("## 🟠 Itaú Colombia")
     st.markdown("### Mesa de Clientes")
     st.markdown("---")
+
     st.markdown("**Busca tu cartera:**")
+    texto_busqueda = st.text_input(
+        "Buscar trader",
+        placeholder="Ej: 4042",
+        label_visibility="collapsed",
+    )
 
-    busqueda = st.text_input("Buscar trader", placeholder="Ej: 4042", label_visibility="collapsed")
-
-    if busqueda:
-        traders_filtrados = [t for t in traders if busqueda.strip().lower() in str(t).lower()]
-        if not traders_filtrados:
+    if texto_busqueda:
+        traders_disponibles = [
+            t for t in lista_traders
+            if texto_busqueda.strip().lower() in str(t).lower()
+        ]
+        if not traders_disponibles:
             st.warning("No se encontró ningún trader con ese texto.")
-            traders_filtrados = traders
+            traders_disponibles = lista_traders
     else:
-        traders_filtrados = traders
+        traders_disponibles = lista_traders
 
-    trader_sel = st.radio(
+    trader_seleccionado = st.radio(
         label="Selecciona tu cartera:",
-        options=traders_filtrados,
+        options=traders_disponibles,
         format_func=lambda t: f"Trader {t}",
     )
+
     st.markdown("---")
     st.caption("Los datos se actualizan automáticamente cuando cambian las fuentes.")
 
-# -----------------------------------------------------------------
-# CONTENIDO PRINCIPAL — contenido centrado, no a todo lo ancho
-# -----------------------------------------------------------------
-df_trader = filtrar_por_trader(df, trader_sel, COLUMNA_TRADER)
-df_prio = calcular_prioridad(df_trader)
 
-col_margen_izq, col_central, col_margen_der = st.columns([1, 6, 1])
+# A partir de aquí, todo el contenido corresponde al trader seleccionado
+df_trader = filtrar_por_trader(df, trader_seleccionado, COLUMNA_TRADER)
+df_priorizacion = generar_priorizacion(df_trader)
 
-with col_central:
-    st.markdown(f"## Cartera del Trader {trader_sel}")
-    st.caption(f"{df_trader['NIT'].nunique()} clientes · {len(df_trader)} operaciones registradas")
 
-    # ── MÉTRICAS RÁPIDAS ──────────────────────────────────────────────
+# Contenedor central: deja márgenes a los lados para que no se vea
+# todo "estirado" de borde a borde de la pantalla.
+_, columna_central, _ = st.columns([1, 6, 1])
+
+with columna_central:
+
+    # =========================================================================
+    # 4. RESUMEN GENERAL DE LA CARTERA
+    # =========================================================================
+
+    st.markdown(f"## Cartera del Trader {trader_seleccionado}")
+    st.caption(
+        f"{df_trader['NIT'].nunique()} clientes · "
+        f"{len(df_trader)} operaciones registradas"
+    )
+
     col1, col2, col3, col4 = st.columns(4)
 
-    monto_total = df_trader["Monto_Total_"].sum() if "Monto_Total_" in df_trader.columns else 0
-    pct_mercado_global = (
-        df_trader["Entidad"].str.upper().eq("MERCADO").sum() / len(df_trader) * 100
-        if "Entidad" in df_trader.columns and len(df_trader) > 0 else 0
-    )
-    dias_prom = df_prio["Dias_Sin_Operar"].replace(999, pd.NA).mean() if not df_prio.empty else 0
-    clientes_urgentes = (df_prio["Puntaje"] >= 66).sum() if not df_prio.empty else 0
+    if not df_priorizacion.empty:
+        clientes_a_llamar_hoy = int((df_priorizacion["Puntaje"] >= 50).sum())
+        monto_total_itau = df_priorizacion["Monto_Itau"].sum()
+        oportunidad_total = df_priorizacion["Monto_Mercado"].sum()
+    else:
+        clientes_a_llamar_hoy = 0
+        monto_total_itau = 0
+        oportunidad_total = 0
 
     col1.metric("Clientes en cartera", df_trader["NIT"].nunique())
-    col2.metric("Clientes urgentes hoy", int(clientes_urgentes), delta="🔴 requieren llamada")
-    col3.metric("% operaciones en Mercado", f"{pct_mercado_global:.1f}%")
-    col4.metric("Monto total histórico", f"{monto_total:,.0f}")
+    col2.metric("Clientes a priorizar hoy", clientes_a_llamar_hoy)
+    col3.metric("Monto generado para Itaú", f"{monto_total_itau:,.0f}")
+    col4.metric("Oportunidad en Mercado", f"{oportunidad_total:,.0f}")
 
     st.markdown("---")
 
-    # ── LISTA DE PRIORIZACIÓN ────────────────────────────────────────
-    st.markdown('<div class="seccion-titulo">📋 Lista de priorización de hoy</div>', unsafe_allow_html=True)
-    st.caption("Ordenada de mayor a menor urgencia. Naranja fuerte = llamada inmediata · Naranja claro = pronto · Gris = sin urgencia.")
+    # =========================================================================
+    # 5. LISTA DE PRIORIZACIÓN
+    # =========================================================================
 
-    if df_prio.empty:
-        st.info("No hay clientes en esta cartera.")
+    st.markdown(
+        '<div class="titulo-seccion">📋 A quién llamar hoy (en orden)</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="subtitulo-seccion">'
+        'Ordenado de mayor a menor prioridad. El puntaje combina: '
+        'oportunidad con la competencia, valor actual para Itaú, '
+        'días sin operar y fidelización.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    if df_priorizacion.empty:
+        st.info("Esta cartera no tiene clientes registrados.")
     else:
-        for i, row in df_prio.iterrows():
-            clase = prioridad_clase(row["Puntaje"])
-            necesidades = inferir_necesidades(row)
-            badges_html = " ".join([f'<span class="badge {b[1]}">{b[0]}</span>' for b in necesidades])
+        for posicion, fila in df_priorizacion.iterrows():
 
-            motivos = []
-            if row["Dias_Sin_Operar"] < 999:
-                motivos.append(f"{int(row['Dias_Sin_Operar'])} días sin operar")
-            if row["Pct_Mercado"] > 0:
-                motivos.append(f"{row['Pct_Mercado']}% operaciones en Mercado")
-            motivo_txt = " · ".join(motivos) if motivos else "Sin datos de fecha"
+            # --- Badges de necesidades ---
+            badges_html = "".join(
+                f'<span class="badge {BADGE_CLASES.get(tipo, "badge-neutral")}">{texto}</span>'
+                for texto, tipo in fila["Necesidades"]
+            )
+
+            # --- Texto de "días sin operar" legible ---
+            if fila["Dias_Sin_Operar"] >= 999:
+                texto_dias = "Sin registro de fecha"
+            else:
+                texto_dias = f"{int(fila['Dias_Sin_Operar'])} días sin operar"
 
             st.markdown(f"""
-            <div class="cliente-card{clase}">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="cliente-nombre">#{i+1} · NIT {row['NIT']}</span>
-                    <span style="font-size:20px; font-weight:800; color:#FF6900;">
-                        {row['Puntaje']}<span style="font-size:12px; color:#8A8A8A;">/100</span>
-                    </span>
+            <div class="tarjeta-cliente">
+                <div class="tarjeta-encabezado">
+                    <span class="tarjeta-titulo">#{posicion + 1} · Cliente NIT {fila['NIT']}</span>
+                    <span class="tarjeta-puntaje">{fila['Puntaje']}<small>/100</small></span>
                 </div>
-                <div class="cliente-puntaje">{motivo_txt}</div>
+
+                <div class="bloque-datos">
+                    <span>💰 Valor para Itaú: <b>{fila['Monto_Itau']:,.0f}</b></span>
+                    <span>🎯 Oportunidad en Mercado: <b>{fila['Monto_Mercado']:,.0f}</b></span>
+                    <span>⏱️ {texto_dias}</span>
+                    <span>🔄 {int(fila['N_Operaciones'])} operaciones históricas</span>
+                </div>
+
+                <div class="bloque-oferta">
+                    📞 <b>Qué ofrecer:</b> {fila['Sugerencia_Oferta']}
+                </div>
+
                 <div>{badges_html}</div>
             </div>
             """, unsafe_allow_html=True)
 
     st.markdown("---")
 
-    # ── TASAS DE PROBABILIDAD ────────────────────────────────────────
-    st.markdown('<div class="seccion-titulo">📊 Tasas de probabilidad por cliente</div>', unsafe_allow_html=True)
-    st.caption("Probabilidad estimada basada en el historial de operaciones de cada cliente.")
+    # =========================================================================
+    # 6. GRÁFICO — producto más usado por cliente
+    # =========================================================================
 
-    if not df_prio.empty:
-        df_tasas = df_prio[["NIT", "Pct_Mercado"]].copy()
-        df_tasas["Pct_Entidad"] = 100 - df_tasas["Pct_Mercado"]
-        df_tasas = df_tasas.rename(columns={
-            "Pct_Mercado": "% Prob. compra en Mercado (otros bancos)",
-            "Pct_Entidad": "% Prob. compra en Itaú",
-        })
+    st.markdown(
+        '<div class="titulo-seccion">📊 Producto más usado por cliente</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="subtitulo-seccion">'
+        'Muestra el producto (SPOT, FORWARD, NEXT DAY) que cada cliente '
+        'usa con más frecuencia. Útil para saber qué producto mencionar '
+        'al ofrecer algo nuevo.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
-        fig_tasas = px.bar(
-            df_tasas.melt(id_vars="NIT", var_name="Canal", value_name="Probabilidad (%)"),
-            x="NIT",
-            y="Probabilidad (%)",
-            color="Canal",
-            barmode="stack",
-            color_discrete_map={
-                "% Prob. compra en Mercado (otros bancos)": "#FFB266",
-                "% Prob. compra en Itaú": "#FF6900",
-            },
-            labels={"NIT": "Cliente (NIT)"},
+    if "Producto" in df_trader.columns and not df_trader.empty:
+        # Para cada cliente, encontrar su producto más frecuente
+        producto_top = (
+            df_trader.groupby(["NIT", "Producto"])
+            .size()
+            .reset_index(name="Conteo")
+            .sort_values(["NIT", "Conteo"], ascending=[True, False])
+            .groupby("NIT")
+            .first()
+            .reset_index()
         )
-        fig_tasas.update_layout(
+
+        # Mantener el mismo orden que la lista de priorización
+        if not df_priorizacion.empty:
+            orden_nits = df_priorizacion["NIT"].tolist()
+            producto_top["orden"] = producto_top["NIT"].map(
+                {nit: i for i, nit in enumerate(orden_nits)}
+            )
+            producto_top = producto_top.sort_values("orden")
+
+        fig_producto = px.bar(
+            producto_top,
+            x="NIT",
+            y="Conteo",
+            color="Producto",
+            text="Producto",
+            labels={"NIT": "Cliente (NIT)", "Conteo": "N° de operaciones con ese producto"},
+            color_discrete_sequence=[COLOR_NARANJA, COLOR_NARANJA_CLARO, COLOR_GRIS],
+        )
+        fig_producto.update_traces(textposition="outside")
+        fig_producto.update_xaxes(type="category")  # Trata el NIT como categoría, no número continuo
+        fig_producto.update_layout(
             plot_bgcolor="#FFFFFF",
             paper_bgcolor="#FFFFFF",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
-            height=320,
+            height=380,
             margin=dict(l=10, r=10, t=30, b=10),
+            legend_title_text="Producto más usado",
         )
-        st.plotly_chart(fig_tasas, use_container_width=True, key=f"tasas_{trader_sel}")
+        st.plotly_chart(fig_producto, use_container_width=True, key=f"producto_{trader_seleccionado}")
+    else:
+        st.info("No hay información de productos para esta cartera.")
 
     st.markdown("---")
 
-    # ── POSIBLES NECESIDADES ─────────────────────────────────────────
-    st.markdown('<div class="seccion-titulo">📌 Posibles necesidades por cliente</div>', unsafe_allow_html=True)
+    # =========================================================================
+    # 7. DETALLE DE OPERACIONES
+    # =========================================================================
 
-    if not df_prio.empty:
-        for _, row in df_prio.iterrows():
-            necesidades = inferir_necesidades(row)
-            badges_html = " ".join([f'<span class="badge {b[1]}">{b[0]}</span>' for b in necesidades])
-            st.markdown(
-                f'<div style="margin-bottom:8px;"><strong>NIT {row["NIT"]}</strong>: {badges_html}</div>',
-                unsafe_allow_html=True,
-            )
-
-    st.markdown("---")
-
-    # ── DETALLE DE OPERACIONES ───────────────────────────────────────
-    with st.expander("📂 Ver detalle completo de operaciones"):
+    with st.expander("📂 Ver detalle completo de operaciones de esta cartera"):
         st.dataframe(df_trader, use_container_width=True)
