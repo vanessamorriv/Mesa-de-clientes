@@ -22,65 +22,67 @@ st.set_page_config(
 )
 
 # -----------------------------------------------------------------
-# ESTILOS GLOBALES
+# ESTILOS GLOBALES — Paleta Itaú (blanco + naranja)
 # -----------------------------------------------------------------
 st.markdown("""
 <style>
     /* Fuentes y fondo */
     html, body, [class*="css"] {
         font-family: 'Segoe UI', sans-serif;
-        background-color: #F5F7FA;
+        background-color: #FFFFFF;
     }
 
     /* Sidebar */
     section[data-testid="stSidebar"] {
-        background-color: #003D7A;
+        background-color: #FFFFFF;
+        border-right: 1px solid #F0F0F0;
     }
     section[data-testid="stSidebar"] * {
-        color: #FFFFFF !important;
+        color: #1A1A1A !important;
     }
-    section[data-testid="stSidebar"] .stRadio label {
-        font-size: 15px;
-        padding: 6px 0;
+    section[data-testid="stSidebar"] h2,
+    section[data-testid="stSidebar"] h3 {
+        color: #FF6900 !important;
     }
 
     /* Tarjetas de métricas */
     div[data-testid="metric-container"] {
         background-color: #FFFFFF;
-        border: 1px solid #E0E6ED;
+        border: 1px solid #FFD9B8;
         border-radius: 10px;
         padding: 16px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        box-shadow: 0 1px 4px rgba(255,105,0,0.06);
     }
 
     /* Tarjetas de priorización */
     .cliente-card {
         background: #FFFFFF;
-        border-left: 5px solid #E53E3E;
+        border: 1px solid #F0F0F0;
+        border-left: 5px solid #FF6900;
         border-radius: 8px;
         padding: 14px 18px;
         margin-bottom: 10px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
     }
     .cliente-card.media {
-        border-left-color: #ED8936;
+        border-left-color: #FFA94D;
     }
     .cliente-card.baja {
-        border-left-color: #48BB78;
+        border-left-color: #BDBDBD;
     }
     .cliente-nombre {
         font-size: 16px;
         font-weight: 700;
-        color: #1A202C;
+        color: #1A1A1A;
     }
     .cliente-puntaje {
         font-size: 13px;
-        color: #718096;
+        color: #8A8A8A;
         margin-top: 2px;
     }
     .cliente-motivo {
         font-size: 13px;
-        color: #4A5568;
+        color: #5A5A5A;
         margin-top: 6px;
     }
     .badge {
@@ -92,19 +94,19 @@ st.markdown("""
         margin-right: 6px;
         margin-top: 6px;
     }
-    .badge-rojo { background: #FED7D7; color: #C53030; }
-    .badge-naranja { background: #FEEBC8; color: #C05621; }
-    .badge-verde { background: #C6F6D5; color: #276749; }
-    .badge-azul { background: #BEE3F8; color: #2C5282; }
+    .badge-rojo { background: #FFE3D1; color: #D2480C; }
+    .badge-naranja { background: #FFF1E0; color: #FF6900; }
+    .badge-verde { background: #F0F0F0; color: #5A5A5A; }
+    .badge-azul { background: #FFEDD9; color: #B85400; }
 
     /* Títulos de sección */
     .seccion-titulo {
         font-size: 18px;
         font-weight: 700;
-        color: #1A202C;
+        color: #1A1A1A;
         margin: 24px 0 12px 0;
         padding-bottom: 6px;
-        border-bottom: 2px solid #E2E8F0;
+        border-bottom: 2px solid #FF6900;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -233,127 +235,142 @@ def prioridad_clase(puntaje: float) -> str:
 # SIDEBAR – SELECCIÓN DE TRADER
 # -----------------------------------------------------------------
 with st.sidebar:
-    st.markdown("## 🏦 Itaú Colombia")
+    st.markdown("## 🟠 Itaú Colombia")
     st.markdown("### Mesa de Clientes")
     st.markdown("---")
-    st.markdown("**Selecciona tu cartera:**")
+    st.markdown("**Busca tu cartera:**")
+
+    busqueda = st.text_input("Buscar trader", placeholder="Ej: 4042", label_visibility="collapsed")
+
+    if busqueda:
+        traders_filtrados = [t for t in traders if busqueda.strip().lower() in str(t).lower()]
+        if not traders_filtrados:
+            st.warning("No se encontró ningún trader con ese texto.")
+            traders_filtrados = traders
+    else:
+        traders_filtrados = traders
+
     trader_sel = st.radio(
-        label="",
-        options=traders,
+        label="Selecciona tu cartera:",
+        options=traders_filtrados,
         format_func=lambda t: f"Trader {t}",
     )
     st.markdown("---")
     st.caption("Los datos se actualizan automáticamente cuando cambian las fuentes.")
 
 # -----------------------------------------------------------------
-# CONTENIDO PRINCIPAL
+# CONTENIDO PRINCIPAL — contenido centrado, no a todo lo ancho
 # -----------------------------------------------------------------
 df_trader = filtrar_por_trader(df, trader_sel, COLUMNA_TRADER)
 df_prio = calcular_prioridad(df_trader)
 
-st.markdown(f"## Cartera del Trader {trader_sel}")
-st.caption(f"{df_trader['NIT'].nunique()} clientes · {len(df_trader)} operaciones registradas")
+col_margen_izq, col_central, col_margen_der = st.columns([1, 6, 1])
 
-# ── MÉTRICAS RÁPIDAS ──────────────────────────────────────────────
-col1, col2, col3, col4 = st.columns(4)
+with col_central:
+    st.markdown(f"## Cartera del Trader {trader_sel}")
+    st.caption(f"{df_trader['NIT'].nunique()} clientes · {len(df_trader)} operaciones registradas")
 
-monto_total = df_trader["Monto_Total_"].sum() if "Monto_Total_" in df_trader.columns else 0
-pct_mercado_global = (
-    df_trader["Entidad"].str.upper().eq("MERCADO").sum() / len(df_trader) * 100
-    if "Entidad" in df_trader.columns and len(df_trader) > 0 else 0
-)
-dias_prom = df_prio["Dias_Sin_Operar"].replace(999, pd.NA).mean() if not df_prio.empty else 0
-clientes_urgentes = (df_prio["Puntaje"] >= 66).sum() if not df_prio.empty else 0
+    # ── MÉTRICAS RÁPIDAS ──────────────────────────────────────────────
+    col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("Clientes en cartera", df_trader["NIT"].nunique())
-col2.metric("Clientes urgentes hoy", int(clientes_urgentes), delta="🔴 requieren llamada")
-col3.metric("% operaciones en Mercado", f"{pct_mercado_global:.1f}%")
-col4.metric("Monto total histórico", f"{monto_total:,.0f}")
+    monto_total = df_trader["Monto_Total_"].sum() if "Monto_Total_" in df_trader.columns else 0
+    pct_mercado_global = (
+        df_trader["Entidad"].str.upper().eq("MERCADO").sum() / len(df_trader) * 100
+        if "Entidad" in df_trader.columns and len(df_trader) > 0 else 0
+    )
+    dias_prom = df_prio["Dias_Sin_Operar"].replace(999, pd.NA).mean() if not df_prio.empty else 0
+    clientes_urgentes = (df_prio["Puntaje"] >= 66).sum() if not df_prio.empty else 0
 
-st.markdown("---")
+    col1.metric("Clientes en cartera", df_trader["NIT"].nunique())
+    col2.metric("Clientes urgentes hoy", int(clientes_urgentes), delta="🔴 requieren llamada")
+    col3.metric("% operaciones en Mercado", f"{pct_mercado_global:.1f}%")
+    col4.metric("Monto total histórico", f"{monto_total:,.0f}")
 
-# ── LISTA DE PRIORIZACIÓN ────────────────────────────────────────
-st.markdown('<div class="seccion-titulo">📋 Lista de priorización de hoy</div>', unsafe_allow_html=True)
-st.caption("Ordenada de mayor a menor urgencia. Rojo = llamada inmediata · Naranja = pronto · Verde = sin urgencia.")
+    st.markdown("---")
 
-if df_prio.empty:
-    st.info("No hay clientes en esta cartera.")
-else:
-    for i, row in df_prio.iterrows():
-        clase = prioridad_clase(row["Puntaje"])
-        necesidades = inferir_necesidades(row)
-        badges_html = " ".join([f'<span class="badge {b[1]}">{b[0]}</span>' for b in necesidades])
+    # ── LISTA DE PRIORIZACIÓN ────────────────────────────────────────
+    st.markdown('<div class="seccion-titulo">📋 Lista de priorización de hoy</div>', unsafe_allow_html=True)
+    st.caption("Ordenada de mayor a menor urgencia. Naranja fuerte = llamada inmediata · Naranja claro = pronto · Gris = sin urgencia.")
 
-        motivos = []
-        if row["Dias_Sin_Operar"] < 999:
-            motivos.append(f"{int(row['Dias_Sin_Operar'])} días sin operar")
-        if row["Pct_Mercado"] > 0:
-            motivos.append(f"{row['Pct_Mercado']}% operaciones en Mercado")
-        motivo_txt = " · ".join(motivos) if motivos else "Sin datos de fecha"
+    if df_prio.empty:
+        st.info("No hay clientes en esta cartera.")
+    else:
+        for i, row in df_prio.iterrows():
+            clase = prioridad_clase(row["Puntaje"])
+            necesidades = inferir_necesidades(row)
+            badges_html = " ".join([f'<span class="badge {b[1]}">{b[0]}</span>' for b in necesidades])
 
-        st.markdown(f"""
-        <div class="cliente-card{clase}">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span class="cliente-nombre">#{i+1} · NIT {row['NIT']}</span>
-                <span style="font-size:20px; font-weight:800; color:#2D3748;">
-                    {row['Puntaje']}<span style="font-size:12px; color:#718096;">/100</span>
-                </span>
+            motivos = []
+            if row["Dias_Sin_Operar"] < 999:
+                motivos.append(f"{int(row['Dias_Sin_Operar'])} días sin operar")
+            if row["Pct_Mercado"] > 0:
+                motivos.append(f"{row['Pct_Mercado']}% operaciones en Mercado")
+            motivo_txt = " · ".join(motivos) if motivos else "Sin datos de fecha"
+
+            st.markdown(f"""
+            <div class="cliente-card{clase}">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="cliente-nombre">#{i+1} · NIT {row['NIT']}</span>
+                    <span style="font-size:20px; font-weight:800; color:#FF6900;">
+                        {row['Puntaje']}<span style="font-size:12px; color:#8A8A8A;">/100</span>
+                    </span>
+                </div>
+                <div class="cliente-puntaje">{motivo_txt}</div>
+                <div>{badges_html}</div>
             </div>
-            <div class="cliente-puntaje">{motivo_txt}</div>
-            <div>{badges_html}</div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
-st.markdown("---")
+    st.markdown("---")
 
-# ── TASAS DE PROBABILIDAD ────────────────────────────────────────
-st.markdown('<div class="seccion-titulo">📊 Tasas de probabilidad por cliente</div>', unsafe_allow_html=True)
-st.caption("Probabilidad estimada basada en el historial de operaciones de cada cliente.")
+    # ── TASAS DE PROBABILIDAD ────────────────────────────────────────
+    st.markdown('<div class="seccion-titulo">📊 Tasas de probabilidad por cliente</div>', unsafe_allow_html=True)
+    st.caption("Probabilidad estimada basada en el historial de operaciones de cada cliente.")
 
-if not df_prio.empty:
-    df_tasas = df_prio[["NIT", "Pct_Mercado"]].copy()
-    df_tasas["Pct_Entidad"] = 100 - df_tasas["Pct_Mercado"]
-    df_tasas = df_tasas.rename(columns={
-        "Pct_Mercado": "% Prob. compra en Mercado (otros bancos)",
-        "Pct_Entidad": "% Prob. compra en Itaú",
-    })
+    if not df_prio.empty:
+        df_tasas = df_prio[["NIT", "Pct_Mercado"]].copy()
+        df_tasas["Pct_Entidad"] = 100 - df_tasas["Pct_Mercado"]
+        df_tasas = df_tasas.rename(columns={
+            "Pct_Mercado": "% Prob. compra en Mercado (otros bancos)",
+            "Pct_Entidad": "% Prob. compra en Itaú",
+        })
 
-    fig_tasas = px.bar(
-        df_tasas.melt(id_vars="NIT", var_name="Canal", value_name="Probabilidad (%)"),
-        x="NIT",
-        y="Probabilidad (%)",
-        color="Canal",
-        barmode="stack",
-        color_discrete_map={
-            "% Prob. compra en Mercado (otros bancos)": "#E53E3E",
-            "% Prob. compra en Itaú": "#003D7A",
-        },
-        labels={"NIT": "Cliente (NIT)"},
-    )
-    fig_tasas.update_layout(
-        plot_bgcolor="#F5F7FA",
-        paper_bgcolor="#F5F7FA",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
-        height=350,
-    )
-    st.plotly_chart(fig_tasas, use_container_width=True, key=f"tasas_{trader_sel}")
-
-st.markdown("---")
-
-# ── POSIBLES NECESIDADES ─────────────────────────────────────────
-st.markdown('<div class="seccion-titulo">📌 Posibles necesidades por cliente</div>', unsafe_allow_html=True)
-
-if not df_prio.empty:
-    for _, row in df_prio.iterrows():
-        necesidades = inferir_necesidades(row)
-        badges_html = " ".join([f'<span class="badge {b[1]}">{b[0]}</span>' for b in necesidades])
-        st.markdown(
-            f'<div style="margin-bottom:8px;"><strong>NIT {row["NIT"]}</strong>: {badges_html}</div>',
-            unsafe_allow_html=True,
+        fig_tasas = px.bar(
+            df_tasas.melt(id_vars="NIT", var_name="Canal", value_name="Probabilidad (%)"),
+            x="NIT",
+            y="Probabilidad (%)",
+            color="Canal",
+            barmode="stack",
+            color_discrete_map={
+                "% Prob. compra en Mercado (otros bancos)": "#FFB266",
+                "% Prob. compra en Itaú": "#FF6900",
+            },
+            labels={"NIT": "Cliente (NIT)"},
         )
+        fig_tasas.update_layout(
+            plot_bgcolor="#FFFFFF",
+            paper_bgcolor="#FFFFFF",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            height=320,
+            margin=dict(l=10, r=10, t=30, b=10),
+        )
+        st.plotly_chart(fig_tasas, use_container_width=True, key=f"tasas_{trader_sel}")
 
-st.markdown("---")
+    st.markdown("---")
 
-# ── DETALLE DE OPERACIONES ───────────────────────────────────────
-with st.expander("📂 Ver detalle completo de operaciones"):
-    st.dataframe(df_trader, use_container_width=True)
+    # ── POSIBLES NECESIDADES ─────────────────────────────────────────
+    st.markdown('<div class="seccion-titulo">📌 Posibles necesidades por cliente</div>', unsafe_allow_html=True)
+
+    if not df_prio.empty:
+        for _, row in df_prio.iterrows():
+            necesidades = inferir_necesidades(row)
+            badges_html = " ".join([f'<span class="badge {b[1]}">{b[0]}</span>' for b in necesidades])
+            st.markdown(
+                f'<div style="margin-bottom:8px;"><strong>NIT {row["NIT"]}</strong>: {badges_html}</div>',
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("---")
+
+    # ── DETALLE DE OPERACIONES ───────────────────────────────────────
+    with st.expander("📂 Ver detalle completo de operaciones"):
+        st.dataframe(df_trader, use_container_width=True)
