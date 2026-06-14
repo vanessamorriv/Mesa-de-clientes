@@ -1,13 +1,11 @@
-
 import pandas as pd
 import gdown
 import os
 import tempfile
 
-
-RUTA_OPERACIONES = "https://docs.google.com/spreadsheets/d/1w_SMaC88aWgV0ZMG6kI17qu8I6ToCvgV/export?format=xlsx"
-RUTA_CLIENTES = "https://docs.google.com/spreadsheets/d/1-BoqjiefDtqQ0ILX-JFx1yZ30nHLmHQF/export?format=xlsx"
-RUTA_CIIU = "https://docs.google.com/spreadsheets/d/10n3IllrQRzMWzOcAL1tZ_cmvjXIzAze4/export?format=xlsx"
+ID_OPERACIONES = "1w_SMaC88aWgV0ZMG6kI17qu8I6ToCvgV"
+ID_CLIENTES = "1-BoqjiefDtqQ0ILX-JFx1yZ30nHLmHQF"
+ID_CIIU = "10n3IllrQRzMWzOcAL1tZ_cmvjXIzAze4"
 
 
 def _normalizar_columnas(df: pd.DataFrame) -> pd.DataFrame:
