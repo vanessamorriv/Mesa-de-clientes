@@ -20,7 +20,19 @@ from priorizacion import (
     ranking_clientes_por_producto,
 )
 
+# ── DIAGNÓSTICO TEMPORAL ─────────────────────────────────────────
+try:
+    df_ops_raw = cargar_operaciones()
+    df_cli_raw = cargar_clientes()
+    df_ciiu_raw = cargar_ciiu()
 
+    st.write("### Columnas Operaciones:", df_ops_raw.columns.tolist())
+    st.write("### Columnas Clientes:", df_cli_raw.columns.tolist())
+    st.write("### Columnas CIIU:", df_ciiu_raw.columns.tolist())
+    st.stop()
+except Exception as e:
+    st.error(f"Error al cargar: {e}")
+    st.stop()
 # =============================================================================
 # 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS
 # =============================================================================
