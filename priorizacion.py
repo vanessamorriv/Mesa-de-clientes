@@ -374,3 +374,5 @@ def generar_priorizacion(df_trader: pd.DataFrame) -> pd.DataFrame:
     df_puntaje["Sector_Economico"] = sectores
 
     return df_puntaje
+
+    return df_puntaje
