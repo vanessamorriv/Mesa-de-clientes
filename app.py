@@ -1,4 +1,26 @@
+"""
+=============================================================================
+ MESA DE CLIENTES — ITAÚ COLOMBIA
+ Dashboard de priorización diaria de clientes para traders
+=============================================================================
 
+ESTRUCTURA DE ESTE ARCHIVO (cada sección está marcada y separada):
+
+    1. CONFIGURACIÓN DE PÁGINA Y ESTILOS
+    2. CARGA DE DATOS
+    3. SIDEBAR — selección de trader (con buscador)
+    4. RESUMEN GENERAL DE LA CARTERA (métricas rápidas + explicación)
+    5. LISTA DE PRIORIZACIÓN — a quién llamar y en qué orden
+    6. GRÁFICO — producto más usado por cliente
+    7. RANKINGS TOP N — clientes más activos por moneda y por producto
+    8. BUSCADOR DE CLIENTE — consultar un cliente específico de la cartera
+    9. DETALLE DE OPERACIONES (tabla completa, opcional)
+
+La lógica de negocio (cálculo de puntaje, recomendaciones de oferta,
+necesidades) vive en priorizacion.py — este archivo solo se encarga
+de mostrarla de forma clara.
+=============================================================================
+"""
 
 import streamlit as st
 import pandas as pd
@@ -18,6 +40,8 @@ from priorizacion import (
     calcular_recomendacion_oferta,
     texto_sugerencia_oferta,
     obtener_sector_economico,
+    ranking_clientes_por_moneda,
+    ranking_clientes_por_producto,
 )
 
 
@@ -164,6 +188,67 @@ st.markdown(f"""
         margin: 10px 0 4px 0;
         font-size: 12.5px;
         color: #5A5A5A;
+    }}
+
+    /* ---------- Ficha de cliente (buscador) ---------- */
+    .ficha-cliente {{
+        background: #FFFFFF;
+        border: 1px solid {COLOR_GRIS_CLARO};
+        border-left: 6px solid {COLOR_NARANJA};
+        border-radius: 10px;
+        padding: 18px 22px;
+        margin-bottom: 14px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }}
+    .ficha-titulo {{
+        font-size: 17px;
+        font-weight: 700;
+        color: #1A1A1A;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid {COLOR_GRIS_CLARO};
+    }}
+    .ficha-grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 14px;
+        margin-bottom: 14px;
+    }}
+    .ficha-dato {{
+        background: #FAFAFA;
+        border-radius: 8px;
+        padding: 10px 14px;
+    }}
+    .ficha-dato-etiqueta {{
+        font-size: 11px;
+        color: {COLOR_GRIS};
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+    }}
+    .ficha-dato-valor {{
+        font-size: 16px;
+        font-weight: 700;
+        color: #1A1A1A;
+    }}
+    .ficha-sector {{
+        background: #FFF6EE;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-bottom: 14px;
+        font-size: 13px;
+        color: #1A1A1A;
+    }}
+    .ficha-sector b {{
+        color: {COLOR_NARANJA};
+    }}
+
+    /* ---------- Tabla de ranking Top N ---------- */
+    .ranking-titulo {{
+        font-size: 14px;
+        font-weight: 700;
+        color: #1A1A1A;
+        margin: 10px 0 6px 0;
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -429,7 +514,90 @@ with columna_central:
     st.markdown("---")
 
     # =========================================================================
-    # 7. BUSCADOR DE CLIENTE — consultar un cliente específico de la cartera
+    # 7. RANKINGS TOP N — clientes más activos por moneda y por producto
+    # =========================================================================
+
+    st.markdown(
+        '<div class="titulo-seccion">🏆 Top clientes más activos de esta cartera</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="subtitulo-seccion">'
+        'Ranking de los clientes con más operaciones registradas, '
+        'filtrado por moneda y por producto. Útil para identificar '
+        'rápidamente a los clientes más recurrentes en cada categoría.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    top_n = st.slider(
+        "¿Cuántos clientes mostrar en cada ranking?",
+        min_value=3, max_value=15, value=5, step=1,
+    )
+
+    col_moneda, col_producto = st.columns(2)
+
+    # --- Ranking por moneda (USD/COP y EUR/COP) ---
+    with col_moneda:
+        st.markdown(
+            '<div class="ranking-titulo">💱 Por moneda (USD/COP y EUR/COP)</div>',
+            unsafe_allow_html=True,
+        )
+
+        if "Moneda" in df_trader.columns:
+            monedas_disponibles = sorted(df_trader["Moneda"].dropna().unique().tolist())
+            monedas_objetivo = [m for m in monedas_disponibles if m in ("USD/COP", "EUR/COP")]
+
+            if not monedas_objetivo:
+                monedas_objetivo = monedas_disponibles  # si no existen esos nombres exactos, usar todas
+
+            ranking_moneda = ranking_clientes_por_moneda(df_trader, monedas_objetivo, top_n=top_n)
+
+            if ranking_moneda.empty:
+                st.info("No hay operaciones registradas en estas monedas.")
+            else:
+                ranking_moneda_mostrar = ranking_moneda.rename(columns={
+                    "NIT": "Cliente (NIT)",
+                    "N_Operaciones": "N° de operaciones",
+                })
+                st.dataframe(ranking_moneda_mostrar, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay columna 'Moneda' en los datos.")
+
+    # --- Ranking por producto (SPOT y FORWARD) ---
+    with col_producto:
+        st.markdown(
+            '<div class="ranking-titulo">📦 Por producto (Spot y Forward)</div>',
+            unsafe_allow_html=True,
+        )
+
+        if "Producto" in df_trader.columns:
+            productos_disponibles = sorted(df_trader["Producto"].dropna().unique().tolist())
+            productos_objetivo = [
+                p for p in productos_disponibles
+                if p.strip().upper() in ("SPOT", "FORWARD")
+            ]
+
+            if not productos_objetivo:
+                productos_objetivo = productos_disponibles  # si no coinciden los nombres, usar todos
+
+            ranking_producto = ranking_clientes_por_producto(df_trader, productos_objetivo, top_n=top_n)
+
+            if ranking_producto.empty:
+                st.info("No hay operaciones registradas en estos productos.")
+            else:
+                ranking_producto_mostrar = ranking_producto.rename(columns={
+                    "NIT": "Cliente (NIT)",
+                    "N_Operaciones": "N° de operaciones",
+                })
+                st.dataframe(ranking_producto_mostrar, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay columna 'Producto' en los datos.")
+
+    st.markdown("---")
+
+    # =========================================================================
+    # 8. BUSCADOR DE CLIENTE — consultar un cliente específico de la cartera
     # =========================================================================
 
     st.markdown(
@@ -471,26 +639,46 @@ with columna_central:
             else:
                 texto_dias_cliente = f"{int(datos['Dias_Sin_Operar'])} días sin operar"
 
-            html_resultado = (
-                '<div class="tarjeta-cliente">'
-                '<div class="tarjeta-encabezado">'
-                f'<span class="tarjeta-titulo">Cliente NIT {nit_buscado}</span>'
+            html_ficha = (
+                '<div class="ficha-cliente">'
+
+                f'<div class="ficha-titulo">👤 Cliente NIT {nit_buscado}</div>'
+
+                '<div class="ficha-grid">'
+
+                '<div class="ficha-dato">'
+                '<div class="ficha-dato-etiqueta">Valor para Itaú</div>'
+                f'<div class="ficha-dato-valor">{datos["Monto_Itau"]:,.0f}</div>'
                 '</div>'
-                '<div class="bloque-datos">'
-                f'<span>💰 Valor para Itaú: <b>{datos["Monto_Itau"]:,.0f}</b></span>'
-                f'<span>🎯 Monto en Mercado: <b>{datos["Monto_Mercado"]:,.0f}</b></span>'
-                f'<span>⏱️ {texto_dias_cliente}</span>'
-                f'<span>🔄 {int(datos["N_Operaciones"])} operaciones históricas</span>'
+
+                '<div class="ficha-dato">'
+                '<div class="ficha-dato-etiqueta">Monto en Mercado</div>'
+                f'<div class="ficha-dato-valor">{datos["Monto_Mercado"]:,.0f}</div>'
                 '</div>'
-                '<div class="bloque-datos">'
-                f'<span>🏢 Sector económico: <b>{sector}</b></span>'
+
+                '<div class="ficha-dato">'
+                '<div class="ficha-dato-etiqueta">Última actividad</div>'
+                f'<div class="ficha-dato-valor">{texto_dias_cliente}</div>'
                 '</div>'
+
+                '<div class="ficha-dato">'
+                '<div class="ficha-dato-etiqueta">Operaciones históricas</div>'
+                f'<div class="ficha-dato-valor">{int(datos["N_Operaciones"])}</div>'
+                '</div>'
+
+                '</div>'  # cierra ficha-grid
+
+                '<div class="ficha-sector">'
+                f'🏢 <b>Sector económico:</b> {sector}'
+                '</div>'
+
                 '<div class="bloque-oferta">'
-                f'📞 <b>Historial de patrones:</b> {sugerencia}'
+                f'📞 <b>Patrones históricos:</b> {sugerencia}'
                 '</div>'
-                '</div>'
+
+                '</div>'  # cierra ficha-cliente
             )
-            st.markdown(html_resultado, unsafe_allow_html=True)
+            st.markdown(html_ficha, unsafe_allow_html=True)
 
             with st.expander("Ver todas las operaciones de este cliente"):
                 st.dataframe(ops_cliente, use_container_width=True)
@@ -498,7 +686,7 @@ with columna_central:
     st.markdown("---")
 
     # =========================================================================
-    # 8. DETALLE DE OPERACIONES
+    # 9. DETALLE DE OPERACIONES
     # =========================================================================
 
     with st.expander("📂 Ver detalle completo de operaciones de esta cartera"):
