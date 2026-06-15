@@ -1,5 +1,4 @@
 
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -344,7 +343,19 @@ with columna_central:
     col1, col2, col3, col4 = st.columns(4)
 
     if not df_priorizacion.empty:
-        clientes_a_llamar_hoy = int((df_priorizacion["Puntaje"] >= 50).sum())
+        # Un cliente "a priorizar hoy" es aquel que tiene AL MENOS UNA
+        # alerta real (Reactivación, Oportunidad, etc.) — no solo
+        # "Sin alertas urgentes". Esto se basa en condiciones absolutas
+        # (días sin operar, % en Mercado, etc.), por lo que varía de
+        # forma natural según el tamaño y comportamiento real de cada
+        # cartera, en vez de depender del puntaje normalizado.
+        def _tiene_alerta_real(lista_necesidades):
+            tipos = [tipo for _, tipo in lista_necesidades]
+            return any(t != "neutral" for t in tipos)
+
+        clientes_a_llamar_hoy = int(
+            df_priorizacion["Necesidades"].apply(_tiene_alerta_real).sum()
+        )
         monto_total_itau = df_priorizacion["Monto_Itau"].sum()
         oportunidad_total = df_priorizacion["Monto_Mercado"].sum()
     else:
@@ -360,6 +371,9 @@ with columna_central:
     st.markdown(
         '<div class="caja-ayuda">'
         'ℹ️ <b>¿Qué significan estos valores?</b> '
+        '"Clientes a priorizar hoy" son los que tienen al menos una '
+        'alerta activa (reactivación, oportunidad en Mercado, cliente '
+        'nuevo, etc.). '
         '"Monto generado para Itaú" es la suma de lo que todos los '
         'clientes de esta cartera ya movieron CON Itaú. '
         '"Oportunidad en Mercado" es la suma de lo que esos mismos '
