@@ -278,8 +278,8 @@ def texto_sugerencia_oferta(recomendacion: dict) -> str:
 
 def obtener_sector_economico(df_trader: pd.DataFrame, nit) -> str:
     """
-    Devuelve el nombre del sector económico (CIIU) del cliente,
-    tal como viene en los datos cruzados con la tabla CIIU.
+    Devuelve el nombre del sector económico (columna DES_CIIU) del
+    cliente, tal como viene en los datos cruzados con la tabla CIIU.
 
     Este dato es informativo: muestra al trader la actividad
     económica real del cliente (no es una inferencia del sistema),
@@ -289,23 +289,20 @@ def obtener_sector_economico(df_trader: pd.DataFrame, nit) -> str:
     """
     ops_cliente = df_trader[df_trader["NIT"] == nit]
 
-    if ops_cliente.empty:
+    if ops_cliente.empty or "DES_CIIU" not in ops_cliente.columns:
         return "No disponible"
 
-    # Buscar la primera columna candidata que tenga el nombre del sector.
-    # El nombre exacto puede variar según cómo venga la tabla CIIU
-    # (ej: "Descripcion", "Nombre_CIIU", "Actividad_Economica", etc.)
-    columnas_candidatas = [
-        col for col in ops_cliente.columns
-        if "ciiu" in col.lower() or "actividad" in col.lower() or "descripcion" in col.lower()
-    ]
+    valor = ops_cliente["DES_CIIU"].dropna()
 
-    for col in columnas_candidatas:
-        valor = ops_cliente[col].dropna()
-        if not valor.empty and str(valor.iloc[0]).strip().lower() not in ("nan", "sin informacion", "sin información", ""):
-            return str(valor.iloc[0])
+    if valor.empty:
+        return "No disponible"
 
-    return "No disponible"
+    texto = str(valor.iloc[0]).strip()
+
+    if texto.lower() in ("nan", "sin informacion", "sin información", ""):
+        return "No disponible"
+
+    return texto
 
 
 def inferir_necesidades(fila_metricas: pd.Series) -> list:
@@ -337,7 +334,73 @@ def inferir_necesidades(fila_metricas: pd.Series) -> list:
 
 
 # ===================================================================
-# 5. FUNCIÓN PRINCIPAL — todo en un solo paso
+# 5. RANKINGS TOP N — clientes más activos por moneda y por producto
+# ===================================================================
+
+def ranking_clientes_por_moneda(df_trader: pd.DataFrame, monedas: list, top_n: int = 5) -> pd.DataFrame:
+    """
+    Devuelve el ranking de los clientes (NIT) con más operaciones en
+    las monedas indicadas (ej: ['USD/COP', 'EUR/COP']).
+
+    Cuenta, para cada cliente, cuántas operaciones tiene en CUALQUIERA
+    de las monedas de la lista, y devuelve el Top N ordenado de mayor
+    a menor.
+
+    Columnas devueltas: NIT, N_Operaciones
+    """
+    if df_trader.empty or "Moneda" not in df_trader.columns:
+        return pd.DataFrame(columns=["NIT", "N_Operaciones"])
+
+    filtrado = df_trader[df_trader["Moneda"].isin(monedas)]
+
+    if filtrado.empty:
+        return pd.DataFrame(columns=["NIT", "N_Operaciones"])
+
+    ranking = (
+        filtrado.groupby("NIT")
+        .size()
+        .reset_index(name="N_Operaciones")
+        .sort_values("N_Operaciones", ascending=False)
+        .head(top_n)
+        .reset_index(drop=True)
+    )
+
+    return ranking
+
+
+def ranking_clientes_por_producto(df_trader: pd.DataFrame, productos: list, top_n: int = 5) -> pd.DataFrame:
+    """
+    Devuelve el ranking de los clientes (NIT) con más operaciones en
+    los productos indicados (ej: ['SPOT', 'FORWARD']).
+
+    Cuenta, para cada cliente, cuántas operaciones tiene en CUALQUIERA
+    de los productos de la lista, y devuelve el Top N ordenado de mayor
+    a menor.
+
+    Columnas devueltas: NIT, N_Operaciones
+    """
+    if df_trader.empty or "Producto" not in df_trader.columns:
+        return pd.DataFrame(columns=["NIT", "N_Operaciones"])
+
+    filtrado = df_trader[df_trader["Producto"].isin(productos)]
+
+    if filtrado.empty:
+        return pd.DataFrame(columns=["NIT", "N_Operaciones"])
+
+    ranking = (
+        filtrado.groupby("NIT")
+        .size()
+        .reset_index(name="N_Operaciones")
+        .sort_values("N_Operaciones", ascending=False)
+        .head(top_n)
+        .reset_index(drop=True)
+    )
+
+    return ranking
+
+
+# ===================================================================
+# 6. FUNCIÓN PRINCIPAL — todo en un solo paso
 # ===================================================================
 
 def generar_priorizacion(df_trader: pd.DataFrame) -> pd.DataFrame:
@@ -372,7 +435,5 @@ def generar_priorizacion(df_trader: pd.DataFrame) -> pd.DataFrame:
     df_puntaje["Sugerencia_Oferta"] = sugerencias
     df_puntaje["Necesidades"] = necesidades_lista
     df_puntaje["Sector_Economico"] = sectores
-
-    return df_puntaje
 
     return df_puntaje
