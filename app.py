@@ -3,6 +3,13 @@
  MESA DE CLIENTES — ITAÚ COLOMBIA
  Dashboard de priorización diaria de clientes para traders
 =============================================================================
+Layout basado en el mockup:
+  - Topbar compacta con selector de cartera
+  - Métricas en franja superior
+  - Columna izquierda: lista de priorización con scroll
+  - Columna derecha: tabs (Producto más usado / Top clientes)
+  - Sección inferior colapsada: buscador (con gráficas) + detalle
+=============================================================================
 """
 
 import streamlit as st
@@ -48,62 +55,67 @@ COLOR_GRIS_CLARO    = "#F0F0F0"
 
 st.markdown(f"""
 <style>
+/* ── Reset y tipografía ── */
 html, body, [class*="css"] {{
     font-family: 'Segoe UI', sans-serif;
     background-color: #FFFFFF;
 }}
 
+/* ── Ocultar sidebar ── */
 section[data-testid="stSidebar"] {{ display: none; }}
 
+/* ── Padding superior del contenedor ── */
 .block-container {{
     padding-top: 3rem !important;
     padding-bottom: 1rem !important;
     max-width: 100% !important;
 }}
 
+/* ── Topbar ── */
 .topbar-logo {{
     font-size: 15px;
     font-weight: 700;
     color: {COLOR_NARANJA};
     white-space: nowrap;
 }}
-
 .topbar-sep {{
     color: {COLOR_GRIS};
     font-size: 13px;
 }}
-
 .topbar-app {{
     font-size: 12px;
     color: {COLOR_GRIS};
 }}
 
+/* ── Métricas ── */
 div[data-testid="metric-container"] {{
     background: #FAFAFA;
     border: 1px solid #FFD9B8;
     border-radius: 8px;
     padding: 10px 14px;
 }}
-
 div[data-testid="metric-container"] [data-testid="stMetricLabel"] {{
     font-size: 11px !important;
     color: {COLOR_GRIS} !important;
 }}
-
 div[data-testid="metric-container"] [data-testid="stMetricValue"] {{
     font-size: 17px !important;
     font-weight: 600 !important;
 }}
 
-/* Cambia el verde automático del delta por naranja Itaú */
-div[data-testid="metric-container"] [data-testid="stMetricDelta"] {{
-    color: {COLOR_NARANJA} !important;
+/* ── Badge naranja para puntaje del cliente top ── */
+.metric-score-badge {{
+    display: inline-block;
+    background: #FFF1E0;
+    color: {COLOR_NARANJA};
+    border-radius: 12px;
+    padding: 2px 9px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: -6px;
 }}
 
-div[data-testid="metric-container"] [data-testid="stMetricDelta"] svg {{
-    fill: {COLOR_NARANJA} !important;
-}}
-
+/* ── Caja de ayuda ── */
 .caja-ayuda {{
     background: #FFF6EE;
     border: 1px solid #FFD9B8;
@@ -114,6 +126,7 @@ div[data-testid="metric-container"] [data-testid="stMetricDelta"] svg {{
     margin: 6px 0 10px 0;
 }}
 
+/* ── Etiqueta de sección ── */
 .section-label {{
     font-size: 11px;
     font-weight: 600;
@@ -125,12 +138,14 @@ div[data-testid="metric-container"] [data-testid="stMetricDelta"] svg {{
     margin-bottom: 10px;
 }}
 
+/* ── Lista de priorización con scroll ── */
 .prio-scroll {{
     overflow-y: auto;
     max-height: 520px;
     padding-right: 4px;
 }}
 
+/* ── Tarjeta de cliente ── */
 .card {{
     border: 1px solid {COLOR_GRIS_CLARO};
     border-left: 4px solid {COLOR_NARANJA};
@@ -139,32 +154,27 @@ div[data-testid="metric-container"] [data-testid="stMetricDelta"] svg {{
     margin-bottom: 8px;
     background: #FFFFFF;
 }}
-
 .card-head {{
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 5px;
 }}
-
 .card-name {{
     font-size: 13px;
     font-weight: 600;
     color: #1A1A1A;
 }}
-
 .card-score {{
     font-size: 16px;
     font-weight: 700;
     color: {COLOR_NARANJA};
 }}
-
 .card-score span {{
     font-size: 11px;
     color: {COLOR_GRIS};
     font-weight: 400;
 }}
-
 .card-row {{
     display: flex;
     gap: 14px;
@@ -173,9 +183,7 @@ div[data-testid="metric-container"] [data-testid="stMetricDelta"] svg {{
     color: #4A4A4A;
     margin-bottom: 4px;
 }}
-
 .card-row b {{ color: #1A1A1A; }}
-
 .card-offer {{
     background: #FFF6EE;
     border-radius: 6px;
@@ -184,9 +192,9 @@ div[data-testid="metric-container"] [data-testid="stMetricDelta"] svg {{
     color: #1A1A1A;
     margin-top: 6px;
 }}
-
 .card-offer b {{ color: {COLOR_NARANJA}; }}
 
+/* ── Badges ── */
 .badge {{
     display: inline-block;
     padding: 2px 8px;
@@ -195,13 +203,13 @@ div[data-testid="metric-container"] [data-testid="stMetricDelta"] svg {{
     font-weight: 600;
     margin: 4px 3px 0 0;
 }}
-
 .badge-alerta      {{ background: #FFE3D1; color: #D2480C; }}
 .badge-oportunidad {{ background: #FFF1E0; color: {COLOR_NARANJA}; }}
 .badge-fidelidad   {{ background: #F0F0F0; color: #5A5A5A; }}
 .badge-nuevo       {{ background: #FFEDD9; color: #B85400; }}
 .badge-neutral     {{ background: #F0F0F0; color: #8A8A8A; }}
 
+/* ── Ficha de cliente (buscador) ── */
 .ficha-cliente {{
     border: 1px solid {COLOR_GRIS_CLARO};
     border-left: 5px solid {COLOR_NARANJA};
@@ -210,7 +218,6 @@ div[data-testid="metric-container"] [data-testid="stMetricDelta"] svg {{
     margin-bottom: 12px;
     background: #FFFFFF;
 }}
-
 .ficha-titulo {{
     font-size: 14px;
     font-weight: 700;
@@ -219,20 +226,17 @@ div[data-testid="metric-container"] [data-testid="stMetricDelta"] svg {{
     padding-bottom: 6px;
     border-bottom: 1px solid {COLOR_GRIS_CLARO};
 }}
-
 .ficha-grid {{
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 10px;
     margin-bottom: 10px;
 }}
-
 .ficha-dato {{
     background: #FAFAFA;
     border-radius: 6px;
     padding: 8px 10px;
 }}
-
 .ficha-dato-etiqueta {{
     font-size: 10px;
     color: {COLOR_GRIS};
@@ -240,13 +244,11 @@ div[data-testid="metric-container"] [data-testid="stMetricDelta"] svg {{
     letter-spacing: .4px;
     margin-bottom: 3px;
 }}
-
 .ficha-dato-valor {{
     font-size: 15px;
     font-weight: 700;
     color: #1A1A1A;
 }}
-
 .ficha-sector {{
     background: #FFF6EE;
     border-radius: 6px;
@@ -255,9 +257,9 @@ div[data-testid="metric-container"] [data-testid="stMetricDelta"] svg {{
     font-size: 12px;
     color: #1A1A1A;
 }}
-
 .ficha-sector b {{ color: {COLOR_NARANJA}; }}
 
+/* ── Mini gráficas del cliente seleccionado ── */
 .mini-chart-label {{
     font-size: 11px;
     font-weight: 600;
@@ -307,7 +309,7 @@ try:
     df = cargar_datos_consolidados()
 except Exception as e:
     st.error(f"No se pudieron cargar los datos: {e}")
-    st.info("Verifica que los enlaces en data_loader.py estén activos o que la base histórica esté correcta.")
+    st.info("Verifica que los 3 enlaces en data_loader.py estén activos, compartidos correctamente o que la base histórica esté correcta.")
     st.stop()
 
 COLUMNA_TRADER = "Cod_Cartera"
@@ -326,23 +328,11 @@ lista_traders = obtener_lista_traders(df, COLUMNA_TRADER)
 col_logo, col_sep, col_app, col_spacer, col_sel = st.columns([1.2, 0.15, 1.2, 4, 1.5])
 
 with col_logo:
-    st.markdown(
-        '<div class="topbar-logo" style="padding-top:6px">🟠 Itaú Colombia</div>',
-        unsafe_allow_html=True,
-    )
-
+    st.markdown('<div class="topbar-logo" style="padding-top:6px">🟠 Itaú Colombia</div>', unsafe_allow_html=True)
 with col_sep:
-    st.markdown(
-        '<div class="topbar-sep" style="padding-top:8px">|</div>',
-        unsafe_allow_html=True,
-    )
-
+    st.markdown('<div class="topbar-sep" style="padding-top:8px">|</div>', unsafe_allow_html=True)
 with col_app:
-    st.markdown(
-        '<div class="topbar-app" style="padding-top:9px">Mesa de Clientes</div>',
-        unsafe_allow_html=True,
-    )
-
+    st.markdown('<div class="topbar-app" style="padding-top:9px">Mesa de Clientes</div>', unsafe_allow_html=True)
 with col_sel:
     trader_seleccionado = st.selectbox(
         label="Cartera",
@@ -454,10 +444,30 @@ else:
 
 m1, m2, m3, m4 = st.columns(4)
 
-m1.metric("Clientes en cartera", df_trader["NIT"].nunique())
-m2.metric("Cliente top de hoy", f"NIT {cliente_top_nit}", f"Puntaje {cliente_top_puntaje}/100")
-m3.metric("Monto generado para Itaú", f"{monto_total_itau:,.0f}")
-m4.metric("Oportunidad en Mercado", f"{oportunidad_total:,.0f}")
+m1.metric(
+    "Clientes en cartera",
+    df_trader["NIT"].nunique()
+)
+
+with m2:
+    st.metric(
+        "Cliente top de hoy",
+        f"NIT {cliente_top_nit}"
+    )
+    st.markdown(
+        f'<div class="metric-score-badge">↗ Puntaje {cliente_top_puntaje}/100</div>',
+        unsafe_allow_html=True,
+    )
+
+m3.metric(
+    "Monto generado para Itaú",
+    f"{monto_total_itau:,.0f}"
+)
+
+m4.metric(
+    "Oportunidad en Mercado",
+    f"{oportunidad_total:,.0f}"
+)
 
 st.markdown(
     '<div class="caja-ayuda">'
@@ -469,7 +479,7 @@ st.markdown(
 
 
 # =============================================================================
-# 6. LAYOUT PRINCIPAL — columna izquierda + columna derecha
+# 6. LAYOUT PRINCIPAL — columna izquierda (lista) + columna derecha (panel)
 # =============================================================================
 
 col_izq, col_der = st.columns([3, 2], gap="medium")
@@ -480,7 +490,6 @@ col_izq, col_der = st.columns([3, 2], gap="medium")
 with col_izq:
     n_clientes = df_trader["NIT"].nunique()
     n_ops      = len(df_trader)
-
     st.markdown(
         f'<div class="section-label">'
         f'📋 A quién llamar hoy — {n_clientes} clientes · {n_ops} operaciones'
@@ -492,19 +501,16 @@ with col_izq:
         st.info("Esta cartera no tiene clientes registrados.")
     else:
         tarjetas_html = ""
-
         for posicion, fila in df_priorizacion.iterrows():
             badges_html = "".join(
                 f'<span class="badge {BADGE_CLASES.get(tipo, "badge-neutral")}">{texto}</span>'
                 for texto, tipo in fila["Necesidades"]
             )
-
             texto_dias = (
                 "Sin registro de fecha"
                 if fila["Dias_Sin_Operar"] >= 999
                 else f"{int(fila['Dias_Sin_Operar'])} días sin operar"
             )
-
             tarjetas_html += (
                 '<div class="card">'
                   '<div class="card-head">'
@@ -526,18 +532,18 @@ with col_izq:
                   f'<div>{badges_html}</div>'
                 '</div>'
             )
-
         st.markdown(
             f'<div class="prio-scroll">{tarjetas_html}</div>',
             unsafe_allow_html=True,
         )
 
 
-# ── COLUMNA DERECHA — Tabs ──────────────────────────────────────────────────
+# ── COLUMNA DERECHA — Tabs: Producto más usado / Top clientes ───────────────
 
 with col_der:
     tab_producto, tab_top = st.tabs(["📊 Producto más usado", "🏆 Top clientes"])
 
+    # ── Tab 1: Gráfico producto más usado por cliente ──
     with tab_producto:
         st.caption("Producto principal por cliente (N° de operaciones)")
 
@@ -551,7 +557,6 @@ with col_der:
                 .first()
                 .reset_index()
             )
-
             if not df_priorizacion.empty:
                 orden_nits = df_priorizacion["NIT"].tolist()
                 producto_top["orden"] = producto_top["NIT"].map(
@@ -566,67 +571,39 @@ with col_der:
                 color="Producto",
                 text="Producto",
                 labels={"NIT": "NIT", "Conteo": "Ops"},
-                color_discrete_sequence=[
-                    COLOR_NARANJA,
-                    COLOR_NARANJA_CLARO,
-                    COLOR_GRIS,
-                ],
+                color_discrete_sequence=[COLOR_NARANJA, COLOR_NARANJA_CLARO, COLOR_GRIS],
             )
-
             fig.update_traces(textposition="outside", textfont_size=9)
             fig.update_xaxes(type="category", tickfont=dict(size=9))
             fig.update_yaxes(tickfont=dict(size=9))
-
             fig.update_layout(
                 plot_bgcolor="#FFFFFF",
                 paper_bgcolor="#FFFFFF",
                 height=260,
                 margin=dict(l=4, r=4, t=20, b=4),
                 legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=1.02,
-                    xanchor="right",
-                    x=1,
-                    font=dict(size=9),
+                    orientation="h", yanchor="bottom", y=1.02,
+                    xanchor="right", x=1, font=dict(size=9),
                 ),
                 legend_title_text="",
             )
-
-            st.plotly_chart(
-                fig,
-                use_container_width=True,
-                key=f"prod_{trader_seleccionado}",
-            )
+            st.plotly_chart(fig, use_container_width=True, key=f"prod_{trader_seleccionado}")
         else:
             st.info("No hay información de productos para esta cartera.")
 
+    # ── Tab 2: Rankings Top N ──
     with tab_top:
         top_n = st.slider(
             "Clientes a mostrar",
-            min_value=3,
-            max_value=10,
-            value=5,
-            step=1,
+            min_value=3, max_value=10, value=5, step=1,
             key=f"slider_{trader_seleccionado}",
         )
 
         st.markdown("**💱 Top por moneda**")
-
         if "Moneda" in df_trader.columns:
             monedas_disponibles = sorted(df_trader["Moneda"].dropna().unique().tolist())
-
-            monedas_objetivo = [
-                m for m in monedas_disponibles
-                if m in ("USD/COP", "EUR/COP")
-            ] or monedas_disponibles
-
-            ranking_moneda = ranking_clientes_por_moneda(
-                df_trader,
-                monedas_objetivo,
-                top_n=top_n,
-            )
-
+            monedas_objetivo = [m for m in monedas_disponibles if m in ("USD/COP", "EUR/COP")] or monedas_disponibles
+            ranking_moneda = ranking_clientes_por_moneda(df_trader, monedas_objetivo, top_n=top_n)
             if ranking_moneda.empty:
                 st.caption("Sin datos de moneda.")
             else:
@@ -639,21 +616,13 @@ with col_der:
             st.caption("Sin columna 'Moneda'.")
 
         st.markdown("**📦 Top por producto**")
-
         if "Producto" in df_trader.columns:
             productos_disponibles = sorted(df_trader["Producto"].dropna().unique().tolist())
-
             productos_objetivo = [
                 p for p in productos_disponibles
                 if p.strip().upper() in ("SPOT", "FORWARD")
             ] or productos_disponibles
-
-            ranking_producto = ranking_clientes_por_producto(
-                df_trader,
-                productos_objetivo,
-                top_n=top_n,
-            )
-
+            ranking_producto = ranking_clientes_por_producto(df_trader, productos_objetivo, top_n=top_n)
             if ranking_producto.empty:
                 st.caption("Sin datos de producto.")
             else:
@@ -667,7 +636,7 @@ with col_der:
 
 
 # =============================================================================
-# 7. SECCIÓN INFERIOR COLAPSADA
+# 7. SECCIÓN INFERIOR COLAPSADA — buscador (con gráficas) + detalle
 # =============================================================================
 
 st.markdown(
@@ -679,11 +648,10 @@ with st.expander("🔍 Buscar cliente específico / Ver detalle de operaciones")
 
     buscar_col, detalle_col = st.columns([1, 1], gap="large")
 
+    # ── Buscador de cliente ──
     with buscar_col:
         st.markdown("**Buscar cliente en esta cartera**")
-
         lista_nits = sorted(df_trader["NIT"].dropna().unique().tolist())
-
         nit_buscado = st.selectbox(
             "Selecciona un NIT",
             options=["-- Selecciona --"] + lista_nits,
@@ -692,21 +660,19 @@ with st.expander("🔍 Buscar cliente específico / Ver detalle de operaciones")
         )
 
         if nit_buscado != "-- Selecciona --":
-            ops_cliente   = df_trader[df_trader["NIT"] == nit_buscado]
-            metricas_cli  = calcular_metricas_por_cliente(ops_cliente)
-            recomendacion = calcular_recomendacion_oferta(df_trader, nit_buscado)
-            sugerencia    = texto_sugerencia_oferta(recomendacion)
-            sector        = obtener_sector_economico(df_trader, nit_buscado)
+            ops_cliente     = df_trader[df_trader["NIT"] == nit_buscado]
+            metricas_cli    = calcular_metricas_por_cliente(ops_cliente)
+            recomendacion   = calcular_recomendacion_oferta(df_trader, nit_buscado)
+            sugerencia      = texto_sugerencia_oferta(recomendacion)
+            sector          = obtener_sector_economico(df_trader, nit_buscado)
 
             if not metricas_cli.empty:
                 datos = metricas_cli.iloc[0]
-
                 texto_dias_cli = (
                     "Sin registro de fecha"
                     if datos["Dias_Sin_Operar"] >= 999
                     else f"{int(datos['Dias_Sin_Operar'])} días sin operar"
                 )
-
                 st.markdown(
                     '<div class="ficha-cliente">'
                     f'<div class="ficha-titulo">👤 NIT {nit_buscado}</div>'
@@ -738,16 +704,21 @@ with st.expander("🔍 Buscar cliente específico / Ver detalle de operaciones")
                     unsafe_allow_html=True,
                 )
 
+                # ── Mini gráficas del cliente seleccionado ──
                 g1, g2, g3 = st.columns(3)
 
+                # -- Gráfico 1: distribución por Producto --
                 with g1:
                     st.markdown(
                         '<div class="mini-chart-label">Producto</div>',
                         unsafe_allow_html=True,
                     )
-
                     if "Producto" in ops_cliente.columns and ops_cliente["Producto"].notna().any():
-                        conteo_prod = ops_cliente["Producto"].value_counts().reset_index()
+                        conteo_prod = (
+                            ops_cliente["Producto"]
+                            .value_counts()
+                            .reset_index()
+                        )
                         conteo_prod.columns = ["Producto", "Conteo"]
 
                         fig_prod = px.pie(
@@ -755,44 +726,41 @@ with st.expander("🔍 Buscar cliente específico / Ver detalle de operaciones")
                             names="Producto",
                             values="Conteo",
                             hole=0.55,
-                            color_discrete_sequence=[
-                                COLOR_NARANJA,
-                                COLOR_NARANJA_CLARO,
-                                COLOR_GRIS,
-                            ],
+                            color_discrete_sequence=[COLOR_NARANJA, COLOR_NARANJA_CLARO, COLOR_GRIS],
                         )
-
-                        fig_prod.update_traces(textinfo="percent", textfont_size=10)
-
+                        fig_prod.update_traces(
+                            textinfo="percent",
+                            textfont_size=10,
+                        )
                         fig_prod.update_layout(
                             height=180,
                             margin=dict(l=0, r=0, t=0, b=0),
                             showlegend=True,
                             legend=dict(
-                                orientation="h",
-                                yanchor="top",
-                                y=-0.05,
+                                orientation="h", yanchor="top", y=-0.05,
                                 font=dict(size=8),
                             ),
                             paper_bgcolor="#FFFFFF",
                         )
-
                         st.plotly_chart(
-                            fig_prod,
-                            use_container_width=True,
+                            fig_prod, use_container_width=True,
                             key=f"prod_pie_{trader_seleccionado}_{nit_buscado}",
                         )
                     else:
                         st.caption("Sin datos.")
 
+                # -- Gráfico 2: distribución por Moneda --
                 with g2:
                     st.markdown(
                         '<div class="mini-chart-label">Moneda</div>',
                         unsafe_allow_html=True,
                     )
-
                     if "Moneda" in ops_cliente.columns and ops_cliente["Moneda"].notna().any():
-                        conteo_moneda = ops_cliente["Moneda"].value_counts().reset_index()
+                        conteo_moneda = (
+                            ops_cliente["Moneda"]
+                            .value_counts()
+                            .reset_index()
+                        )
                         conteo_moneda.columns = ["Moneda", "Conteo"]
 
                         fig_moneda = px.pie(
@@ -800,42 +768,35 @@ with st.expander("🔍 Buscar cliente específico / Ver detalle de operaciones")
                             names="Moneda",
                             values="Conteo",
                             hole=0.55,
-                            color_discrete_sequence=[
-                                COLOR_NARANJA,
-                                COLOR_NARANJA_CLARO,
-                                COLOR_GRIS,
-                            ],
+                            color_discrete_sequence=[COLOR_NARANJA, COLOR_NARANJA_CLARO, COLOR_GRIS],
                         )
-
-                        fig_moneda.update_traces(textinfo="percent", textfont_size=10)
-
+                        fig_moneda.update_traces(
+                            textinfo="percent",
+                            textfont_size=10,
+                        )
                         fig_moneda.update_layout(
                             height=180,
                             margin=dict(l=0, r=0, t=0, b=0),
                             showlegend=True,
                             legend=dict(
-                                orientation="h",
-                                yanchor="top",
-                                y=-0.05,
+                                orientation="h", yanchor="top", y=-0.05,
                                 font=dict(size=8),
                             ),
                             paper_bgcolor="#FFFFFF",
                         )
-
                         st.plotly_chart(
-                            fig_moneda,
-                            use_container_width=True,
+                            fig_moneda, use_container_width=True,
                             key=f"moneda_pie_{trader_seleccionado}_{nit_buscado}",
                         )
                     else:
                         st.caption("Sin datos.")
 
+                # -- Gráfico 3: Itaú vs Mercado (montos) --
                 with g3:
                     st.markdown(
                         '<div class="mini-chart-label">Itaú vs Mercado</div>',
                         unsafe_allow_html=True,
                     )
-
                     monto_itau_cli    = float(datos["Monto_Itau"])
                     monto_mercado_cli = float(datos["Monto_Mercado"])
 
@@ -844,7 +805,6 @@ with st.expander("🔍 Buscar cliente específico / Ver detalle de operaciones")
                             "Canal": ["Itaú", "Mercado"],
                             "Monto": [monto_itau_cli, monto_mercado_cli],
                         })
-
                         fig_canal = px.pie(
                             df_itau_mercado,
                             names="Canal",
@@ -856,25 +816,22 @@ with st.expander("🔍 Buscar cliente específico / Ver detalle de operaciones")
                                 "Mercado": COLOR_GRIS,
                             },
                         )
-
-                        fig_canal.update_traces(textinfo="percent", textfont_size=10)
-
+                        fig_canal.update_traces(
+                            textinfo="percent",
+                            textfont_size=10,
+                        )
                         fig_canal.update_layout(
                             height=180,
                             margin=dict(l=0, r=0, t=0, b=0),
                             showlegend=True,
                             legend=dict(
-                                orientation="h",
-                                yanchor="top",
-                                y=-0.05,
+                                orientation="h", yanchor="top", y=-0.05,
                                 font=dict(size=8),
                             ),
                             paper_bgcolor="#FFFFFF",
                         )
-
                         st.plotly_chart(
-                            fig_canal,
-                            use_container_width=True,
+                            fig_canal, use_container_width=True,
                             key=f"canal_pie_{trader_seleccionado}_{nit_buscado}",
                         )
                     else:
@@ -883,6 +840,7 @@ with st.expander("🔍 Buscar cliente específico / Ver detalle de operaciones")
                 with st.expander("Ver operaciones de este cliente"):
                     st.dataframe(ops_cliente, use_container_width=True)
 
+    # ── Detalle completo de la cartera ──
     with detalle_col:
         st.markdown("**Detalle completo de operaciones de esta cartera**")
         st.dataframe(df_trader, use_container_width=True)
