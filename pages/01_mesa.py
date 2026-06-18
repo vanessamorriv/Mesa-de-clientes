@@ -37,11 +37,8 @@ def render_tarjetas(html_contenido: str, altura: int = 650):
     """, height=altura, scrolling=True)
 
 from data_loader import (
-    cargar_operaciones,
-    cargar_clientes,
-    cargar_ciiu,
+    cargar_vista_completa,
     cargar_predicciones,
-    cruzar_bases,
     asignar_traders,
     obtener_lista_traders,
     filtrar_por_trader,
@@ -74,15 +71,10 @@ BADGE_CLASES = {
 # ── CSS Global ────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
-  /* ── Base ── */
   html, body, [class*="css"] {{ font-size: 15px; }}
-
-  /* ── Topbar ── */
   .topbar-logo {{ font-size: 18px; font-weight: 800; color: {COLOR_NARANJA}; }}
   .topbar-sep  {{ color: {COLOR_BORDE}; font-size: 22px; }}
   .topbar-app  {{ font-size: 16px; font-weight: 600; color: #111827; }}
-
-  /* ── Section label ── */
   .section-label {{
     font-size: 13px; font-weight: 700; color: {COLOR_GRIS};
     text-transform: uppercase; letter-spacing: .6px;
@@ -90,16 +82,12 @@ st.markdown(f"""
     border-bottom: 3px solid {COLOR_NARANJA};
     margin-bottom: 16px;
   }}
-
-  /* ── Info box ── */
   .caja-ayuda {{
     background: {COLOR_NARANJA_PALE}; border: 1px solid #FFCFA0;
     border-radius: 8px; padding: 10px 14px;
     font-size: 13px; color: #4B3A2A;
     margin: 6px 0 16px 0; line-height: 1.5;
   }}
-
-  /* ── TARJETA ── */
   .card {{
     background: #FFFFFF;
     border: 1px solid {COLOR_BORDE};
@@ -110,153 +98,85 @@ st.markdown(f"""
     transition: box-shadow .15s;
   }}
   .card:hover {{ box-shadow: 0 4px 14px rgba(255,105,0,.12); }}
-
-  /* Cabecera tarjeta */
   .card-head {{
     display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 12px;
-    padding-bottom: 10px;
+    margin-bottom: 12px; padding-bottom: 10px;
     border-bottom: 1px solid {COLOR_GRIS_CLARO};
   }}
-  .card-nit {{
-    font-size: 16px; font-weight: 700; color: #111827;
-  }}
-  .card-rank {{
-    font-size: 13px; font-weight: 500; color: {COLOR_GRIS};
-    margin-right: 6px;
-  }}
+  .card-nit {{ font-size: 16px; font-weight: 700; color: #111827; }}
+  .card-rank {{ font-size: 13px; font-weight: 500; color: {COLOR_GRIS}; margin-right: 6px; }}
   .card-score {{
-    background: {COLOR_NARANJA};
-    color: #fff;
+    background: {COLOR_NARANJA}; color: #fff;
     font-size: 15px; font-weight: 700;
-    border-radius: 20px;
-    padding: 3px 14px;
-    white-space: nowrap;
+    border-radius: 20px; padding: 3px 14px; white-space: nowrap;
   }}
   .card-score span {{ font-size: 11px; font-weight: 400; opacity: .85; margin-left: 2px; }}
-
-  /* Filas de datos dentro de tarjeta */
-  .card-grid {{
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px 20px;
-    margin-bottom: 12px;
-  }}
-  .card-item {{
-    display: flex; flex-direction: column; gap: 1px;
-  }}
-  .card-item-label {{
-    font-size: 11px; color: {COLOR_GRIS}; text-transform: uppercase; letter-spacing: .4px;
-  }}
-  .card-item-value {{
-    font-size: 14px; font-weight: 600; color: #111827;
-  }}
-
-  /* Sector (ancho completo) */
-  .card-sector {{
-    font-size: 12px; color: {COLOR_GRIS};
-    margin-bottom: 10px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }}
-
-  /* Oferta */
+  .card-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; margin-bottom: 12px; }}
+  .card-item {{ display: flex; flex-direction: column; gap: 1px; }}
+  .card-item-label {{ font-size: 11px; color: {COLOR_GRIS}; text-transform: uppercase; letter-spacing: .4px; }}
+  .card-item-value {{ font-size: 14px; font-weight: 600; color: #111827; }}
+  .card-sector {{ font-size: 12px; color: {COLOR_GRIS}; margin-bottom: 10px;
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
   .card-offer {{
-    background: {COLOR_NARANJA_PALE};
-    border-radius: 8px;
-    padding: 9px 13px;
-    font-size: 13px; color: #4B3A2A;
-    margin-bottom: 10px;
-    line-height: 1.5;
+    background: {COLOR_NARANJA_PALE}; border-radius: 8px;
+    padding: 9px 13px; font-size: 13px; color: #4B3A2A;
+    margin-bottom: 10px; line-height: 1.5;
   }}
-
-  /* Badges */
   .badges {{ display: flex; flex-wrap: wrap; gap: 6px; }}
-  .badge {{
-    font-size: 11px; font-weight: 600;
-    border-radius: 20px; padding: 3px 11px;
-    white-space: nowrap;
-  }}
+  .badge {{ font-size: 11px; font-weight: 600; border-radius: 20px; padding: 3px 11px; white-space: nowrap; }}
   .badge-alerta      {{ background:#FEE2E2; color:#991B1B; }}
   .badge-oportunidad {{ background:#FEF3C7; color:#92400E; }}
   .badge-fidelidad   {{ background:#D1FAE5; color:#065F46; }}
   .badge-nuevo       {{ background:#DBEAFE; color:#1E40AF; }}
   .badge-neutral     {{ background:{COLOR_GRIS_CLARO}; color:{COLOR_GRIS}; }}
-
-  /* Scroll lista */
   .prio-scroll {{ max-height: 72vh; overflow-y: auto; padding-right: 4px; }}
-
-  /* ── FICHA CLIENTE ── */
   .ficha-wrap {{
-    background: #FFFFFF;
-    border: 1px solid {COLOR_BORDE};
-    border-radius: 14px;
-    padding: 24px 28px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.07);
-    margin-bottom: 20px;
+    background: #FFFFFF; border: 1px solid {COLOR_BORDE};
+    border-radius: 14px; padding: 24px 28px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07); margin-bottom: 20px;
   }}
   .ficha-header {{
     display: flex; justify-content: space-between; align-items: flex-start;
     margin-bottom: 20px; padding-bottom: 16px;
     border-bottom: 2px solid {COLOR_NARANJA};
   }}
-  .ficha-nit {{
-    font-size: 22px; font-weight: 800; color: #111827;
-  }}
-  .ficha-sub {{
-    font-size: 13px; color: {COLOR_GRIS}; margin-top: 2px;
-  }}
+  .ficha-nit {{ font-size: 22px; font-weight: 800; color: #111827; }}
+  .ficha-sub {{ font-size: 13px; color: {COLOR_GRIS}; margin-top: 2px; }}
   .ficha-ml-pill {{
-    background: {COLOR_NARANJA};
-    color: #fff;
-    border-radius: 24px;
-    padding: 6px 18px;
-    text-align: center;
+    background: {COLOR_NARANJA}; color: #fff;
+    border-radius: 24px; padding: 6px 18px; text-align: center;
   }}
-  .ficha-ml-prob {{
-    font-size: 22px; font-weight: 800; line-height: 1;
-  }}
-  .ficha-ml-label {{
-    font-size: 11px; opacity: .85;
-  }}
+  .ficha-ml-prob {{ font-size: 22px; font-weight: 800; line-height: 1; }}
+  .ficha-ml-label {{ font-size: 11px; opacity: .85; }}
   .ficha-stats {{
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 14px;
-    margin-bottom: 18px;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 14px; margin-bottom: 18px;
   }}
   .ficha-stat {{
-    background: {COLOR_GRIS_CLARO};
-    border-radius: 10px;
-    padding: 14px 16px;
-    text-align: center;
+    background: {COLOR_GRIS_CLARO}; border-radius: 10px;
+    padding: 14px 16px; text-align: center;
   }}
-  .ficha-stat-val {{
-    font-size: 20px; font-weight: 800; color: {COLOR_NARANJA};
-  }}
+  .ficha-stat-val {{ font-size: 20px; font-weight: 800; color: {COLOR_NARANJA}; }}
   .ficha-stat-lbl {{
     font-size: 11px; color: {COLOR_GRIS}; margin-top: 3px;
     text-transform: uppercase; letter-spacing: .4px;
   }}
   .ficha-offer {{
-    background: {COLOR_NARANJA_PALE};
-    border-radius: 10px; padding: 12px 16px;
-    font-size: 13px; color: #4B3A2A; line-height: 1.6;
+    background: {COLOR_NARANJA_PALE}; border-radius: 10px;
+    padding: 12px 16px; font-size: 13px; color: #4B3A2A; line-height: 1.6;
   }}
 </style>
 """, unsafe_allow_html=True)
 
 
 # ── Carga de datos ────────────────────────────────────────────────
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)
 def cargar_todo():
-    df_ops      = cargar_operaciones()
-    df_clientes = cargar_clientes()
-    df_ciiu     = cargar_ciiu()
-    df          = cruzar_bases(df_ops, df_clientes, df_ciiu)
-    df          = asignar_traders(df)
+    df = cargar_vista_completa()
+    df = asignar_traders(df)
     return df
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)
 def cargar_pred():
     return cargar_predicciones()
 
@@ -297,17 +217,16 @@ pred_trader = pred[pred['nit'].astype(str).isin([str(n) for n in nits_trader])] 
 
 # ── KPIs ─────────────────────────────────────────────────────────
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("Clientes en cartera",     df_trader['nit'].nunique())
-m2.metric("Predicciones ML",         len(pred_trader))
+m1.metric("Clientes en cartera",  df_trader['nit'].nunique())
+m2.metric("Predicciones ML",      len(pred_trader))
 m3.metric("Monto Itaú",  f"${df_trader['monto_entidad'].sum():,.0f}" if 'monto_entidad' in df_trader.columns else "—")
-m4.metric("Oportunidad mercado", f"${df_trader['monto_mercado'].sum():,.0f}"  if 'monto_mercado' in df_trader.columns else "—")
+m4.metric("Oportunidad mercado",  f"${df_trader['monto_mercado'].sum():,.0f}" if 'monto_mercado' in df_trader.columns else "—")
 
 st.markdown("<div class='caja-ayuda'>ℹ️ <b>Monto Itaú</b>: operaciones cerradas con Itaú. &nbsp;|&nbsp; <b>Oportunidad mercado</b>: monto operado con la competencia — negocio capturable.</div>", unsafe_allow_html=True)
 
 
 # ── Helper: construir tarjeta ─────────────────────────────────────
 def _tarjeta(pos, fila, modo="hist"):
-    """Devuelve el HTML de una tarjeta de cliente."""
     texto_dias = "Sin registro" if fila['dias_sin_operar'] >= 999 else f"{int(fila['dias_sin_operar'])} días sin operar"
     sector     = str(fila.get('sector_economico') or 'Sector no disponible')[:55]
     badges_html = "".join(
@@ -315,7 +234,6 @@ def _tarjeta(pos, fila, modo="hist"):
         for texto, tipo in fila['necesidades']
     )
 
-    # Score / prob según modo
     if modo == "ml":
         prob  = fila.get('prob_opera_7d', 0) or 0
         score_html = f'<span class="card-score">{prob:.0%}<span> prob.</span></span>'
@@ -325,7 +243,6 @@ def _tarjeta(pos, fila, modo="hist"):
     else:
         score_html = f'<span class="card-score">{fila["puntaje_historico"]}<span>/100</span></span>'
 
-    # Fila de datos central (varía por modo)
     if modo == "ml":
         prod = str(fila.get('producto_predicho') or '—')
         if prod.lower() in ('nan', 'none', ''):
@@ -534,7 +451,6 @@ with tab_comb:
 with tab_dash:
     st.markdown('<div class="section-label">📊 Dashboard de la cartera</div>', unsafe_allow_html=True)
 
-    # ── Filtros ──
     if 'fecha' in df_trader.columns and df_trader['fecha'].notna().any():
         fecha_min = df_trader['fecha'].min().date()
         fecha_max = df_trader['fecha'].max().date()
@@ -549,7 +465,6 @@ with tab_dash:
             prod_sel = st.multiselect("Producto", options=sorted(prods_filtro), default=[], key="dash_prod",
                                       placeholder="Todos los productos")
 
-        # Aplicar filtros
         mask = (df_trader['fecha'].dt.date >= desde) & (df_trader['fecha'].dt.date <= hasta)
         df_dash = df_trader[mask].copy()
         if prod_sel:
@@ -644,7 +559,6 @@ with tab_buscar:
             datos      = metricas.iloc[0]
             texto_dias = "Sin registro" if datos['dias_sin_operar'] >= 999 else f"{int(datos['dias_sin_operar'])} días"
 
-            # Predicción ML
             prob_ml, prod_ml = None, None
             if not pred_cliente.empty:
                 prob_ml = pred_cliente.iloc[0].get('prob_opera_7d', None)
@@ -652,7 +566,6 @@ with tab_buscar:
                 if pd.isna(prod_ml) or str(prod_ml).lower() in ('nan', 'none', ''):
                     prod_ml = '—'
 
-            # ── Ficha header ──
             pill_html = ""
             if prob_ml is not None:
                 pill_html = f"""
@@ -662,7 +575,7 @@ with tab_buscar:
                   <div style="font-size:12px;margin-top:4px;opacity:.9">🎯 {prod_ml}</div>
                 </div>"""
 
-            sector = str(datos.get('sector_economico') or 'Sector no disponible')
+            sector   = str(datos.get('sector_economico') or 'Sector no disponible')
             segmento = str(datos.get('segmento') or '')
 
             st.markdown(f"""
@@ -674,7 +587,6 @@ with tab_buscar:
                 </div>
                 {pill_html}
               </div>
-
               <div class="ficha-stats">
                 <div class="ficha-stat">
                   <div class="ficha-stat-val">${datos['monto_itau']:,.0f}</div>
@@ -693,14 +605,12 @@ with tab_buscar:
                   <div class="ficha-stat-lbl">Operaciones</div>
                 </div>
               </div>
-
               <div class="ficha-offer">
                 📞 <b>Patrones históricos:</b> {sugerencia}
               </div>
             </div>
             """, unsafe_allow_html=True)
 
-            # ── Gráficas ──
             g1, g2, g3 = st.columns(3)
 
             with g1:
