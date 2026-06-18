@@ -92,36 +92,22 @@ def cargar_predicciones(fecha: str = None) -> pd.DataFrame:
     return df
 
 
-# ── Cruce de bases ────────────────────────────────────────────────
-def cruzar_bases(
-    df_operaciones: pd.DataFrame,
-    df_clientes: pd.DataFrame,
-    df_ciiu: pd.DataFrame,
-) -> pd.DataFrame:
-    """
-    Cruza las 3 tablas:
-    operaciones.nit = clientes.id
-    clientes.ciiu_buc = ciiu.cod_act_ciiu_nocli
-    """
-    if df_operaciones.empty:
-        return pd.DataFrame()
-
-    df = df_operaciones.merge(
-        df_clientes,
-        left_on='nit',
-        right_on='id',
-        how='left',
-        suffixes=('', '_cliente'),
-    )
-
-    df = df.merge(
-        df_ciiu,
-        left_on='ciiu_buc',
-        right_on='cod_act_ciiu_nocli',
-        how='left',
-        suffixes=('', '_ciiu'),
-    )
-
+def cargar_vista_completa() -> pd.DataFrame:
+    rows = []
+    chunk = 1000
+    offset = 0
+    while True:
+        res = supabase.table('vista_operaciones_completa') \
+                      .select('*') \
+                      .range(offset, offset + chunk - 1) \
+                      .execute()
+        if not res.data:
+            break
+        rows.extend(res.data)
+        offset += chunk
+    df = pd.DataFrame(rows)
+    if not df.empty and 'fecha' in df.columns:
+        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
     return df
 
 
