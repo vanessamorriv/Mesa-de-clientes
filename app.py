@@ -46,5 +46,3 @@ pg = st.navigation([
     st.Page("pages/02_cargue.py", title="Cargue de Datos",  icon="📤"),
 ])
 pg.run()
-
-pg.run()
