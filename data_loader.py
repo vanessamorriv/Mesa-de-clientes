@@ -1,388 +1,246 @@
 import pandas as pd
-import gdown
 import os
-import tempfile
+from supabase import create_client
+
+# ── Conexión Supabase ─────────────────────────────────────────────
+SUPABASE_URL = os.environ['SUPABASE_URL']
+SUPABASE_KEY = os.environ['SUPABASE_SERVICE_KEY']
+supabase     = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-# -----------------------------------------------------------------
-# CONFIGURACIÓN DE FUENTES DE DATOS
-# -----------------------------------------------------------------
-
-ID_OPERACIONES = "1w_SMaC88aWgV0ZMG6kI17qu8I6ToCvgV"
-ID_CLIENTES = "1-BoqjiefDtqQ0ILX-JFx1yZ30nHLmHQF"
-ID_CIIU = "10n3IllrQRzMWzOcAL1tZ_cmvjXIzAze4"
+# ── Conexión ──────────────────────────────────────────────────────
+def get_supabase():
+    return supabase
 
 
-# -----------------------------------------------------------------
-# CONFIGURACIÓN DE BASE HISTÓRICA LOCAL
-# -----------------------------------------------------------------
-
-CARPETA_DATA = "data"
-RUTA_OPERACIONES_HISTORICA = os.path.join(CARPETA_DATA, "operaciones_historica.xlsx")
-
-
-# -----------------------------------------------------------------
-# FUNCIONES GENERALES
-# -----------------------------------------------------------------
-
-def _normalizar_columnas(df: pd.DataFrame) -> pd.DataFrame:
-    """Quita espacios extra en los nombres de columnas."""
-    df = df.copy()
-    df.columns = [str(c).strip() for c in df.columns]
-    return df
-
-
-def _normalizar_texto_series(serie: pd.Series) -> pd.Series:
-    """Normaliza una serie para construir llaves consistentes."""
-    return (
-        serie.astype(str)
-        .str.strip()
-        .str.upper()
-        .str.replace(r"\s+", " ", regex=True)
-    )
-
-
-def _descargar_y_leer(file_id: str, nombre: str = "archivo") -> pd.DataFrame:
-    """
-    Descarga un archivo de Google Drive por su ID usando gdown
-    y lo carga como DataFrame.
-    """
-    carpeta_temp = tempfile.gettempdir()
-    ruta_destino = os.path.join(carpeta_temp, f"{file_id}.xlsx")
-
-    url = f"https://drive.google.com/uc?id={file_id}"
-
-    resultado = gdown.download(url, ruta_destino, quiet=False)
-
-    if resultado is None:
-        raise RuntimeError(
-            f"No se pudo descargar el archivo '{nombre}' (ID: {file_id}). "
-            f"Verifica que esté compartido como 'Cualquier usuario con el enlace - Lector'."
-        )
-
-    if not os.path.exists(ruta_destino) or os.path.getsize(ruta_destino) == 0:
-        raise RuntimeError(
-            f"El archivo '{nombre}' (ID: {file_id}) se descargó vacío o no se guardó correctamente."
-        )
-
-    df = pd.read_excel(ruta_destino)
-    return _normalizar_columnas(df)
-
-
-def _convertir_fecha_si_existe(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Convierte la columna Fecha si existe.
-    Sirve tanto para fechas tipo Excel numérico como fechas normales.
-    """
-    df = df.copy()
-
-    if "Fecha" in df.columns:
-        if pd.api.types.is_numeric_dtype(df["Fecha"]):
-            df["Fecha"] = pd.to_datetime(
-                df["Fecha"],
-                origin="1899-12-30",
-                unit="D",
-                errors="coerce"
-            )
-        else:
-            df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
-
-    return df
-
-
-# -----------------------------------------------------------------
-# CARGA DESDE GOOGLE DRIVE
-# -----------------------------------------------------------------
-
+# ── Cargar tablas base ────────────────────────────────────────────
 def cargar_operaciones() -> pd.DataFrame:
-    """Carga la base de operaciones desde Google Drive."""
-    df = _descargar_y_leer(ID_OPERACIONES, nombre="Operaciones")
-    df = _convertir_fecha_si_existe(df)
+    rows = []
+    chunk = 1000
+    offset = 0
+    while True:
+        res = supabase.table('operaciones').select('*').range(offset, offset + chunk - 1).execute()
+        if not res.data:
+            break
+        rows.extend(res.data)
+        offset += chunk
+    df = pd.DataFrame(rows)
+    if not df.empty and 'fecha' in df.columns:
+        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
     return df
 
 
 def cargar_clientes() -> pd.DataFrame:
-    """Carga la base de clientes/BUC desde Google Drive."""
-    return _descargar_y_leer(ID_CLIENTES, nombre="Clientes/BUC")
+    rows = []
+    chunk = 1000
+    offset = 0
+    while True:
+        res = supabase.table('clientes').select('*').range(offset, offset + chunk - 1).execute()
+        if not res.data:
+            break
+        rows.extend(res.data)
+        offset += chunk
+    return pd.DataFrame(rows)
 
 
 def cargar_ciiu() -> pd.DataFrame:
-    """Carga el catálogo CIIU desde Google Drive."""
-    return _descargar_y_leer(ID_CIIU, nombre="CIIU")
+    res = supabase.table('ciiu').select('*').execute()
+    return pd.DataFrame(res.data)
 
 
-# -----------------------------------------------------------------
-# BASE HISTÓRICA LOCAL
-# -----------------------------------------------------------------
-
-def existe_base_operaciones_historica() -> bool:
-    """Valida si ya existe una base histórica local de operaciones."""
-    return (
-        os.path.exists(RUTA_OPERACIONES_HISTORICA)
-        and os.path.getsize(RUTA_OPERACIONES_HISTORICA) > 0
-    )
-
-
-def cargar_base_operaciones_historica() -> pd.DataFrame:
+def cargar_predicciones(fecha: str = None) -> pd.DataFrame:
     """
-    Carga la base histórica local de operaciones.
-    Si no existe, devuelve un DataFrame vacío.
+    Carga predicciones desde Supabase.
+    Si se pasa fecha (formato 'YYYY-MM-DD'), filtra por esa fecha.
+    Si no, trae la fecha más reciente disponible.
     """
-    if not existe_base_operaciones_historica():
-        return pd.DataFrame()
-
-    df = pd.read_excel(RUTA_OPERACIONES_HISTORICA)
-    df = _normalizar_columnas(df)
-    df = _convertir_fecha_si_existe(df)
-
-    return df
-
-
-def guardar_base_operaciones_historica(df: pd.DataFrame) -> None:
-    """Guarda la base histórica local de operaciones."""
-    os.makedirs(CARPETA_DATA, exist_ok=True)
-
-    df_guardar = df.copy()
-
-    if "LLAVE_OPERACION" in df_guardar.columns:
-        df_guardar = df_guardar.drop(columns=["LLAVE_OPERACION"])
-
-    df_guardar.to_excel(RUTA_OPERACIONES_HISTORICA, index=False)
-
-
-# -----------------------------------------------------------------
-# LLAVE ÚNICA PARA EVITAR DUPLICADOS
-# -----------------------------------------------------------------
-
-def crear_llave_operacion(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Crea una llave única para identificar operaciones.
-
-    Prioridad:
-    1. Si existe ID_OPERACION, usa esa columna.
-    2. Si no existe, construye una llave con columnas de negocio.
-
-    Nota:
-    Lo ideal es que en la base exista una columna ID_OPERACION.
-    """
-    df = _normalizar_columnas(df)
-    df = df.copy()
-
-    if "ID_OPERACION" in df.columns:
-        df["LLAVE_OPERACION"] = _normalizar_texto_series(df["ID_OPERACION"])
-        return df
-
-    posibles_columnas_llave = [
-        "Fecha",
-        "NIT",
-        "Producto",
-        "Lado",
-        "Entidad",
-        "Moneda",
-        "Monto",
-    ]
-
-    columnas_disponibles = [
-        col for col in posibles_columnas_llave
-        if col in df.columns
-    ]
-
-    columnas_faltantes = [
-        col for col in posibles_columnas_llave
-        if col not in df.columns
-    ]
-
-    if len(columnas_disponibles) < 4:
-        raise ValueError(
-            "No se puede crear una llave única confiable para las operaciones. "
-            f"Columnas disponibles para llave: {columnas_disponibles}. "
-            f"Columnas faltantes esperadas: {columnas_faltantes}. "
-            "Se recomienda agregar una columna ID_OPERACION."
-        )
-
-    partes_llave = []
-
-    for col in columnas_disponibles:
-        if col == "Fecha":
-            fecha_normalizada = pd.to_datetime(df[col], errors="coerce").dt.strftime("%Y-%m-%d")
-            partes_llave.append(fecha_normalizada.fillna("SIN_FECHA"))
-        else:
-            partes_llave.append(_normalizar_texto_series(df[col]).fillna("SIN_DATO"))
-
-    df["LLAVE_OPERACION"] = partes_llave[0]
-
-    for parte in partes_llave[1:]:
-        df["LLAVE_OPERACION"] = df["LLAVE_OPERACION"] + "|" + parte
-
-    return df
-
-
-# -----------------------------------------------------------------
-# LÓGICA DE CARGA DESDE STREAMLIT
-# -----------------------------------------------------------------
-
-def procesar_carga_streamlit(
-    df_nuevo: pd.DataFrame,
-    modo_carga: str,
-) -> pd.DataFrame:
-    """
-    Procesa el archivo cargado desde Streamlit.
-
-    modo_carga puede ser:
-    - "Cargar toda la base"
-    - "Cargar solo nuevos casos"
-
-    Retorna la base histórica final.
-    """
-    if df_nuevo is None or df_nuevo.empty:
-        raise ValueError("El archivo cargado no contiene registros.")
-
-    df_nuevo = _normalizar_columnas(df_nuevo)
-    df_nuevo = _convertir_fecha_si_existe(df_nuevo)
-    df_nuevo = crear_llave_operacion(df_nuevo)
-
-    if modo_carga == "Cargar toda la base":
-        df_final = df_nuevo.copy()
-
-    elif modo_carga == "Cargar solo nuevos casos":
-        df_historico = cargar_base_operaciones_historica()
-
-        if df_historico.empty:
-            df_final = df_nuevo.copy()
-        else:
-            df_historico = _normalizar_columnas(df_historico)
-            df_historico = _convertir_fecha_si_existe(df_historico)
-            df_historico = crear_llave_operacion(df_historico)
-
-            registros_antes = len(df_historico)
-
-            df_final = pd.concat(
-                [df_historico, df_nuevo],
-                ignore_index=True
-            )
-
-            df_final = df_final.drop_duplicates(
-                subset=["LLAVE_OPERACION"],
-                keep="last"
-            )
-
-            registros_despues = len(df_final)
-            registros_nuevos = registros_despues - registros_antes
-
-            print(f"Registros históricos antes: {registros_antes}")
-            print(f"Registros finales después: {registros_despues}")
-            print(f"Registros nuevos agregados: {registros_nuevos}")
-
+    if fecha:
+        res = supabase.table('predicciones').select('*').eq('fecha_prediccion', fecha).execute()
+        df  = pd.DataFrame(res.data)
     else:
-        raise ValueError(
-            "Modo de carga no válido. Use 'Cargar toda la base' o 'Cargar solo nuevos casos'."
+        # Obtener fecha más reciente
+        res_fecha = (
+            supabase.table('predicciones')
+            .select('fecha_prediccion')
+            .order('fecha_prediccion', desc=True)
+            .limit(1)
+            .execute()
         )
+        if not res_fecha.data:
+            return pd.DataFrame()
+        fecha_max = res_fecha.data[0]['fecha_prediccion']
 
-    guardar_base_operaciones_historica(df_final)
+        rows  = []
+        chunk = 1000
+        offset = 0
+        while True:
+            res = (
+                supabase.table('predicciones')
+                .select('*')
+                .eq('fecha_prediccion', fecha_max)
+                .range(offset, offset + chunk - 1)
+                .execute()
+            )
+            if not res.data:
+                break
+            rows.extend(res.data)
+            offset += chunk
+        df = pd.DataFrame(rows)
 
-    return df_final
+    if not df.empty and 'fecha_prediccion' in df.columns:
+        df['fecha_prediccion'] = pd.to_datetime(df['fecha_prediccion'], errors='coerce')
+    return df
 
 
-# -----------------------------------------------------------------
-# CRUCE DE BASES
-# -----------------------------------------------------------------
-
+# ── Cruce de bases ────────────────────────────────────────────────
 def cruzar_bases(
     df_operaciones: pd.DataFrame,
     df_clientes: pd.DataFrame,
     df_ciiu: pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    Cruza las 3 bases en cadena:
-
-    1) Operaciones <-> Clientes/BUC
-       NIT = ID
-
-    2) Resultado <-> CIIU
-       CIIU_BUC = COD_ACT_CIIU_NOCLI
+    Cruza las 3 tablas:
+    operaciones.nit = clientes.id
+    clientes.ciiu_buc = ciiu.cod_act_ciiu_nocli
     """
-    df_operaciones = _normalizar_columnas(df_operaciones)
-    df_clientes = _normalizar_columnas(df_clientes)
-    df_ciiu = _normalizar_columnas(df_ciiu)
-
-    columnas_requeridas_ops = ["NIT"]
-    columnas_requeridas_clientes = ["ID", "CIIU_BUC"]
-    columnas_requeridas_ciiu = ["COD_ACT_CIIU_NOCLI"]
-
-    for col in columnas_requeridas_ops:
-        if col not in df_operaciones.columns:
-            raise ValueError(f"No se encontró la columna requerida '{col}' en operaciones.")
-
-    for col in columnas_requeridas_clientes:
-        if col not in df_clientes.columns:
-            raise ValueError(f"No se encontró la columna requerida '{col}' en clientes.")
-
-    for col in columnas_requeridas_ciiu:
-        if col not in df_ciiu.columns:
-            raise ValueError(f"No se encontró la columna requerida '{col}' en CIIU.")
+    if df_operaciones.empty:
+        return pd.DataFrame()
 
     df = df_operaciones.merge(
         df_clientes,
-        left_on="NIT",
-        right_on="ID",
-        how="left",
-        suffixes=("", "_cliente"),
+        left_on='nit',
+        right_on='id',
+        how='left',
+        suffixes=('', '_cliente'),
     )
 
     df = df.merge(
         df_ciiu,
-        left_on="CIIU_BUC",
-        right_on="COD_ACT_CIIU_NOCLI",
-        how="left",
-        suffixes=("", "_ciiu"),
+        left_on='ciiu_buc',
+        right_on='cod_act_ciiu_nocli',
+        how='left',
+        suffixes=('', '_ciiu'),
     )
 
     return df
 
 
-# -----------------------------------------------------------------
-# FUNCIONES DE APOYO PARA EL DASHBOARD
-# -----------------------------------------------------------------
-
-def obtener_lista_traders(
-    df: pd.DataFrame,
-    columna_trader: str = "Cod_Cartera",
-) -> list:
-    """Devuelve la lista de traders únicos presentes en los datos."""
-    if columna_trader not in df.columns:
-        raise ValueError(f"No existe la columna '{columna_trader}' en la base consolidada.")
-
-    return sorted(df[columna_trader].dropna().unique().tolist())
-
-
-def filtrar_por_trader(
-    df: pd.DataFrame,
-    trader_id,
-    columna_trader: str = "Cod_Cartera",
-) -> pd.DataFrame:
-    """Filtra el DataFrame consolidado por trader."""
-    if columna_trader not in df.columns:
-        raise ValueError(f"No existe la columna '{columna_trader}' en la base consolidada.")
-
-    return df[df[columna_trader] == trader_id]
-
-
-def cargar_datos_completos() -> pd.DataFrame:
+# ── Asignación temporal de traders ───────────────────────────────
+def asignar_traders(df: pd.DataFrame, n_traders: int = 20, seed: int = 42) -> pd.DataFrame:
     """
-    Carga las bases completas.
-
-    Prioridad:
-    1. Si existe base histórica local cargada por Streamlit, usa esa.
-    2. Si no existe, carga operaciones desde Google Drive.
+    Asigna un trader a cada NIT de forma aleatoria y reproducible.
+    Cuando llegue la data real de asignación, reemplazar esta función.
     """
-    df_ops = cargar_base_operaciones_historica()
+    import numpy as np
+    np.random.seed(seed)
+    nits_unicos = df['nit'].dropna().unique()
+    asignacion  = {
+        nit: f"Trader_{str(i+1).zfill(2)}"
+        for i, (nit, _) in enumerate(
+            zip(nits_unicos, np.random.randint(1, n_traders + 1, size=len(nits_unicos)))
+        )
+    }
+    # Asignación real aleatoria
+    traders_asignados = [f"Trader_{str(x).zfill(2)}" for x in np.random.randint(1, n_traders + 1, size=len(nits_unicos))]
+    asignacion = dict(zip(nits_unicos, traders_asignados))
+    df['trader'] = df['nit'].map(asignacion)
+    return df
 
-    if df_ops.empty:
-        df_ops = cargar_operaciones()
 
-    df_clientes = cargar_clientes()
-    df_ciiu = cargar_ciiu()
+def obtener_lista_traders(df: pd.DataFrame) -> list:
+    if 'trader' not in df.columns:
+        return []
+    return sorted(df['trader'].dropna().unique().tolist())
 
-    df_consolidado = cruzar_bases(df_ops, df_clientes, df_ciiu)
 
-    return df_consolidado
+def filtrar_por_trader(df: pd.DataFrame, trader_id: str) -> pd.DataFrame:
+    if 'trader' not in df.columns:
+        return df
+    return df[df['trader'] == trader_id]
+
+
+# ── Subir archivos desde la app (módulo de cargue) ───────────────
+def subir_operaciones(df_nuevo: pd.DataFrame) -> dict:
+    """
+    Recibe un DataFrame de operaciones nuevas y hace upsert a Supabase.
+    Devuelve un dict con el resultado.
+    """
+    df = df_nuevo.copy()
+    df.columns = [c.strip() for c in df.columns]
+    df = df.rename(columns={
+        'Fecha':         'fecha',
+        'TipoIDC':       'tipo_idc',
+        'NIT':           'nit',
+        'Producto':      'producto',
+        'Lado':          'lado',
+        'Entidad':       'entidad',
+        'Moneda':        'moneda',
+        'Monto_Total_':  'monto_total',
+        'Monto_Entidad': 'monto_entidad',
+        'Monto_Mercado': 'monto_mercado',
+    })
+
+    if pd.api.types.is_numeric_dtype(df['fecha']):
+        df['fecha'] = pd.to_datetime(df['fecha'], origin='1899-12-30', unit='D', errors='coerce')
+    else:
+        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+
+    df['fecha'] = df['fecha'].dt.strftime('%Y-%m-%d')
+    df['nit']   = df['nit'].astype(str).str.strip()
+    df = df.dropna(subset=['fecha', 'nit'])
+    df = df.where(pd.notna(df), None)
+
+    data = df.to_dict('records')
+    lotes = 0
+    for i in range(0, len(data), 500):
+        supabase.table('operaciones').upsert(
+            data[i:i+500],
+            on_conflict='fecha,nit,producto,lado,entidad,moneda,monto_total'
+        ).execute()
+        lotes += 1
+
+    return {'registros': len(data), 'lotes': lotes}
+
+
+def subir_clientes(df_nuevo: pd.DataFrame) -> dict:
+    df = df_nuevo.copy()
+    df.columns = [c.strip() for c in df.columns]
+    df = df.rename(columns={
+        'ID':          'id',
+        'TipoID':      'tipo_id',
+        'TipoIDC':     'tipo_idc',
+        'Segmento':    'segmento',
+        'Subsegmento': 'subsegmento',
+        'Cod_Cartera': 'cod_cartera',
+        'CIIU_BUC':    'ciiu_buc',
+        'IDE':         'ide',
+    })
+    df['id'] = df['id'].astype(str).str.strip()
+    df = df.dropna(subset=['id'])
+    df = df.where(pd.notna(df), None)
+
+    data = df.to_dict('records')
+    for i in range(0, len(data), 500):
+        supabase.table('clientes').upsert(data[i:i+500], on_conflict='id').execute()
+
+    return {'registros': len(data)}
+
+
+def subir_ciiu(df_nuevo: pd.DataFrame) -> dict:
+    df = df_nuevo.copy()
+    df.columns = [c.strip() for c in df.columns]
+    df = df.rename(columns={
+        'COD_ACT_CIIU_NOCLI': 'cod_act_ciiu_nocli',
+        'DES_CIIU':           'des_ciiu',
+    })
+    df['cod_act_ciiu_nocli'] = df['cod_act_ciiu_nocli'].astype(str).str.strip()
+    df = df.dropna(subset=['cod_act_ciiu_nocli'])
+    df = df.where(pd.notna(df), None)
+
+    data = df.to_dict('records')
+    for i in range(0, len(data), 500):
+        supabase.table('ciiu').upsert(
+            data[i:i+500], on_conflict='cod_act_ciiu_nocli'
+        ).execute()
+
+    return {'registros': len(data)}
