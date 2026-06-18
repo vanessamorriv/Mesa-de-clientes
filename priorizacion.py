@@ -1,383 +1,308 @@
-
-
 import pandas as pd
-
+import numpy as np
 
 # ===================================================================
 # 1. CONFIGURACIÓN DE PESOS Y UMBRALES
 # ===================================================================
-# Si en el futuro el banco pide cambiar la importancia de cada
-# factor, solo se ajustan estos números (deben sumar 100).
 
-PESO_OPORTUNIDAD_MERCADO = 30   # Monto fuera de Itaú (negocio a recuperar)
-PESO_VALOR_ACTUAL_ITAU   = 30   # Monto ya generado para Itaú
-PESO_DIAS_SIN_OPERAR     = 20   # Riesgo de inactividad
-PESO_FIDELIZACION        = 20   # Número de operaciones históricas
+PESO_OPORTUNIDAD_MERCADO = 30
+PESO_VALOR_ACTUAL_ITAU   = 30
+PESO_DIAS_SIN_OPERAR     = 20
+PESO_FIDELIZACION        = 20
 
-# Umbral de días sin operar para considerar "riesgo de reactivación"
 UMBRAL_DIAS_REACTIVACION = 30
-
-# Umbral de operaciones para considerar a un cliente "frecuente / fiel"
-UMBRAL_OPERACIONES_FIEL = 3
+UMBRAL_OPERACIONES_FIEL  = 3
 
 
 # ===================================================================
-# 2. CÁLCULO DEL PUNTAJE DE PRIORIDAD
+# 2. MÉTRICAS POR CLIENTE
 # ===================================================================
-
-def _normalizar(serie: pd.Series) -> pd.Series:
-    """
-    Lleva una columna numérica a una escala de 0 a 1.
-
-    El valor más alto del grupo se convierte en 1, el más bajo en 0,
-    y los demás quedan proporcionalmente en medio. Esto permite
-    comparar factores que tienen escalas muy distintas (días, %,
-    montos en millones) de forma justa.
-    """
-    minimo, maximo = serie.min(), serie.max()
-    if maximo == minimo:
-        # Si todos los clientes tienen el mismo valor, no hay forma
-        # de diferenciarlos por este factor -> se les da un valor neutro
-        return pd.Series([0.5] * len(serie), index=serie.index)
-    return (serie - minimo) / (maximo - minimo)
-
 
 def calcular_metricas_por_cliente(df_trader: pd.DataFrame) -> pd.DataFrame:
-    """
-    Agrupa las operaciones por cliente (NIT) y calcula, para cada uno:
-
-    - Monto_Itau:        cuánto ha movido CON Itaú (Monto_Entidad)
-    - Monto_Mercado:     cuánto ha movido CON la competencia
-    - Monto_Total:       suma de ambos
-    - Dias_Sin_Operar:   días desde su última operación
-    - N_Operaciones:     cuántas operaciones tiene en total
-    - Pct_Mercado:       % de su monto total que está en Mercado
-
-    Devuelve un DataFrame con una fila por cliente (NIT).
-    """
-    hoy = pd.Timestamp.now()
+    hoy   = pd.Timestamp.now()
     filas = []
 
-    for nit, grupo in df_trader.groupby("NIT"):
+    for nit, grupo in df_trader.groupby('nit'):
+        monto_entidad = grupo['monto_entidad'].sum() if 'monto_entidad' in grupo.columns else 0
+        monto_total   = grupo['monto_total'].sum()   if 'monto_total'   in grupo.columns else 0
+        monto_mercado = max(monto_total - monto_entidad, 0)
 
-        # --- Montos: separar lo que es con Itaú vs con el Mercado ---
-        monto_itau = grupo["Monto_Entidad"].sum() if "Monto_Entidad" in grupo.columns else 0
-        monto_total = grupo["Monto_Total_"].sum() if "Monto_Total_" in grupo.columns else 0
-        monto_mercado = max(monto_total - monto_itau, 0)
-
-        # --- Días sin operar: hoy - fecha de la última operación ---
-        if "Fecha" in grupo.columns and grupo["Fecha"].notna().any():
-            dias_sin_operar = (hoy - grupo["Fecha"].max()).days
+        if 'fecha' in grupo.columns and grupo['fecha'].notna().any():
+            dias_sin_operar = (hoy - grupo['fecha'].max()).days
         else:
-            dias_sin_operar = 999  # Sin fecha registrada -> se trata como "máxima inactividad"
+            dias_sin_operar = 999
 
-        # --- % del monto total que corresponde a Mercado ---
         pct_mercado = (monto_mercado / monto_total * 100) if monto_total > 0 else 0
 
+        # Datos estáticos del cliente
+        segmento    = grupo['segmento'].iloc[0]    if 'segmento'    in grupo.columns else None
+        subsegmento = grupo['subsegmento'].iloc[0] if 'subsegmento' in grupo.columns else None
+        des_ciiu    = grupo['des_ciiu'].iloc[0]    if 'des_ciiu'    in grupo.columns else 'No disponible'
+
         filas.append({
-            "NIT": nit,
-            "Monto_Itau": monto_itau,
-            "Monto_Mercado": monto_mercado,
-            "Monto_Total": monto_total,
-            "Dias_Sin_Operar": dias_sin_operar,
-            "N_Operaciones": len(grupo),
-            "Pct_Mercado": round(pct_mercado, 1),
+            'nit':              nit,
+            'monto_itau':       monto_entidad,
+            'monto_mercado':    monto_mercado,
+            'monto_total':      monto_total,
+            'dias_sin_operar':  dias_sin_operar,
+            'n_operaciones':    len(grupo),
+            'pct_mercado':      round(pct_mercado, 1),
+            'segmento':         segmento,
+            'subsegmento':      subsegmento,
+            'sector_economico': des_ciiu,
         })
 
     return pd.DataFrame(filas)
 
 
+# ===================================================================
+# 3. PUNTAJE DE PRIORIDAD HISTÓRICO
+# ===================================================================
+
+def _normalizar(serie: pd.Series) -> pd.Series:
+    minimo, maximo = serie.min(), serie.max()
+    if maximo == minimo:
+        return pd.Series([0.5] * len(serie), index=serie.index)
+    return (serie - minimo) / (maximo - minimo)
+
+
 def calcular_puntaje_prioridad(df_metricas: pd.DataFrame) -> pd.DataFrame:
+    if df_metricas.empty:
+        return df_metricas
+
+    df = df_metricas.copy()
+
+    df['score_oportunidad']  = _normalizar(df['monto_mercado'])   * PESO_OPORTUNIDAD_MERCADO
+    df['score_valor_actual'] = _normalizar(df['monto_itau'])      * PESO_VALOR_ACTUAL_ITAU
+    df['score_dias']         = _normalizar(df['dias_sin_operar']) * PESO_DIAS_SIN_OPERAR
+    df['score_fidelizacion'] = _normalizar(df['n_operaciones'])   * PESO_FIDELIZACION
+
+    df['puntaje_historico'] = (
+        df['score_oportunidad']
+        + df['score_valor_actual']
+        + df['score_dias']
+        + df['score_fidelizacion']
+    ).round(1)
+
+    return df.sort_values('puntaje_historico', ascending=False).reset_index(drop=True)
+
+
+# ===================================================================
+# 4. SCORE COMBINADO (ML + HISTÓRICO)
+# ===================================================================
+
+def calcular_score_combinado(
+    df_metricas: pd.DataFrame,
+    df_predicciones: pd.DataFrame,
+    peso_ml: float = 0.6,
+    peso_historico: float = 0.4,
+) -> pd.DataFrame:
     """
-    A partir de las métricas por cliente, calcula el Puntaje de
-    Prioridad (0-100) combinando los 4 factores con sus pesos.
-
-    Agrega las columnas:
-        - score_oportunidad
-        - score_valor_actual
-        - score_dias
-        - score_fidelizacion
-        - Puntaje  (suma de los anteriores, 0-100)
-
-    Y ordena el resultado de mayor a menor puntaje.
+    Combina el score del modelo ML con el puntaje histórico.
+    peso_ml + peso_historico debe sumar 1.0
     """
     if df_metricas.empty:
         return df_metricas
 
     df = df_metricas.copy()
 
-    df["score_oportunidad"]  = _normalizar(df["Monto_Mercado"])    * PESO_OPORTUNIDAD_MERCADO
-    df["score_valor_actual"] = _normalizar(df["Monto_Itau"])       * PESO_VALOR_ACTUAL_ITAU
-    df["score_dias"]         = _normalizar(df["Dias_Sin_Operar"])  * PESO_DIAS_SIN_OPERAR
-    df["score_fidelizacion"] = _normalizar(df["N_Operaciones"])    * PESO_FIDELIZACION
+    # Normalizar puntaje histórico a 0-1
+    df['puntaje_historico_norm'] = _normalizar(df['puntaje_historico'])
 
-    df["Puntaje"] = (
-        df["score_oportunidad"]
-        + df["score_valor_actual"]
-        + df["score_dias"]
-        + df["score_fidelizacion"]
-    ).round(1)
+    # Cruzar con predicciones ML
+    if not df_predicciones.empty:
+        pred_cols = df_predicciones[['nit', 'prob_opera_7d', 'producto_predicho', 'score_prioridad']].copy()
+        pred_cols['nit'] = pred_cols['nit'].astype(str)
+        df['nit'] = df['nit'].astype(str)
+        df = df.merge(pred_cols, on='nit', how='left')
+        df['prob_opera_7d']   = df['prob_opera_7d'].fillna(0)
+        df['score_prioridad'] = df['score_prioridad'].fillna(0)
+    else:
+        df['prob_opera_7d']    = 0
+        df['producto_predicho'] = None
+        df['score_prioridad']  = 0
 
-    return df.sort_values("Puntaje", ascending=False).reset_index(drop=True)
+    # Score combinado
+    df['score_combinado'] = (
+        peso_ml * _normalizar(df['score_prioridad']) +
+        peso_historico * df['puntaje_historico_norm']
+    ).round(4)
+
+    return df.sort_values('score_combinado', ascending=False).reset_index(drop=True)
 
 
 # ===================================================================
-# 3. RECOMENDACIÓN DE OFERTA (qué decir en la llamada)
+# 5. RECOMENDACIÓN DE OFERTA
 # ===================================================================
 
 def calcular_recomendacion_oferta(df_trader: pd.DataFrame, nit) -> dict:
-    """
-    Analiza el historial de un cliente específico (por NIT) y
-    devuelve su patrón más frecuente de:
-
-        - Producto más usado   (ej: SPOT, FORWARD, NEXT DAY)
-        - Lado más usado        (ej: BANCO COMPRA / BANCO VENDE)
-        - Moneda más usada      (ej: USD, EUR)
-        - % de veces que cada patrón se repite
-
-    Devuelve un diccionario con esa información, listo para
-    mostrar como sugerencia al trader.
-    """
-    ops_cliente = df_trader[df_trader["NIT"] == nit]
+    ops_cliente = df_trader[df_trader['nit'] == str(nit)]
 
     resultado = {
-        "producto_frecuente": None,
-        "pct_producto": 0,
-        "lado_frecuente": None,
-        "pct_lado": 0,
-        "moneda_frecuente": None,
-        "pct_moneda": 0,
+        'producto_frecuente': None, 'pct_producto': 0,
+        'lado_frecuente':     None, 'pct_lado':     0,
+        'moneda_frecuente':   None, 'pct_moneda':   0,
     }
 
     if ops_cliente.empty:
         return resultado
 
-    # --- Producto más frecuente ---
-    if "Producto" in ops_cliente.columns:
-        conteo_producto = ops_cliente["Producto"].value_counts()
-        if not conteo_producto.empty:
-            resultado["producto_frecuente"] = conteo_producto.index[0]
-            resultado["pct_producto"] = round(conteo_producto.iloc[0] / len(ops_cliente) * 100, 0)
+    if 'producto' in ops_cliente.columns:
+        conteo = ops_cliente['producto'].value_counts()
+        if not conteo.empty:
+            resultado['producto_frecuente'] = conteo.index[0]
+            resultado['pct_producto']       = round(conteo.iloc[0] / len(ops_cliente) * 100, 0)
 
-    # --- Lado más frecuente (compra / vende) ---
-    if "Lado" in ops_cliente.columns:
-        conteo_lado = ops_cliente["Lado"].value_counts()
-        if not conteo_lado.empty:
-            resultado["lado_frecuente"] = conteo_lado.index[0]
-            resultado["pct_lado"] = round(conteo_lado.iloc[0] / len(ops_cliente) * 100, 0)
+    if 'lado' in ops_cliente.columns:
+        conteo = ops_cliente['lado'].value_counts()
+        if not conteo.empty:
+            resultado['lado_frecuente'] = conteo.index[0]
+            resultado['pct_lado']       = round(conteo.iloc[0] / len(ops_cliente) * 100, 0)
 
-    # --- Moneda más frecuente ---
-    if "Moneda" in ops_cliente.columns:
-        conteo_moneda = ops_cliente["Moneda"].value_counts()
-        if not conteo_moneda.empty:
-            resultado["moneda_frecuente"] = conteo_moneda.index[0]
-            resultado["pct_moneda"] = round(conteo_moneda.iloc[0] / len(ops_cliente) * 100, 0)
+    if 'moneda' in ops_cliente.columns:
+        conteo = ops_cliente['moneda'].value_counts()
+        if not conteo.empty:
+            resultado['moneda_frecuente'] = conteo.index[0]
+            resultado['pct_moneda']       = round(conteo.iloc[0] / len(ops_cliente) * 100, 0)
 
     return resultado
 
 
 def texto_sugerencia_oferta(recomendacion: dict) -> str:
-    """
-    Convierte el diccionario de recomendación en una frase legible
-    para el trader, por ejemplo:
-
-        "FORWARD · el cliente suele VENDER · Moneda más usada: USD (90%)"
-
-    Si no hay suficiente información, devuelve un mensaje neutro.
-    """
-    producto = recomendacion.get("producto_frecuente")
-    lado = recomendacion.get("lado_frecuente")
-    moneda = recomendacion.get("moneda_frecuente")
-    pct_producto = recomendacion.get("pct_producto", 0)
-    pct_lado = recomendacion.get("pct_lado", 0)
-    pct_moneda = recomendacion.get("pct_moneda", 0)
+    producto    = recomendacion.get('producto_frecuente')
+    lado        = recomendacion.get('lado_frecuente')
+    moneda      = recomendacion.get('moneda_frecuente')
+    pct_producto = recomendacion.get('pct_producto', 0)
+    pct_lado     = recomendacion.get('pct_lado', 0)
+    pct_moneda   = recomendacion.get('pct_moneda', 0)
 
     if not producto and not lado and not moneda:
-        return "Sin historial suficiente para sugerir una oferta."
+        return 'Sin historial suficiente para sugerir una oferta.'
 
     partes = []
     if producto:
         partes.append(f"{producto} ({pct_producto:.0f}% de sus operaciones)")
     if lado:
-        partes.append(f"{lado.title()} ({pct_lado:.0f}% de sus operaciones)")
+        partes.append(f"{lado.title()} ({pct_lado:.0f}%)")
     if moneda:
-        partes.append(f"Moneda: {moneda} ({pct_moneda:.0f}% de sus operaciones)")
+        partes.append(f"Moneda: {moneda} ({pct_moneda:.0f}%)")
 
-    return " · ".join(partes)
+    return ' · '.join(partes)
 
 
 # ===================================================================
-# 4. NECESIDADES / ALERTAS DEL CLIENTE
+# 6. NECESIDADES / ALERTAS
 # ===================================================================
 
-def obtener_sector_economico(df_trader: pd.DataFrame, nit) -> str:
-    """
-    Devuelve el nombre del sector económico (columna DES_CIIU) del
-    cliente, tal como viene en los datos cruzados con la tabla CIIU.
-
-    Este dato es informativo: muestra al trader la actividad
-    económica real del cliente (no es una inferencia del sistema),
-    para que el trader use su propio criterio.
-
-    Si no hay información disponible, devuelve "No disponible".
-    """
-    ops_cliente = df_trader[df_trader["NIT"] == nit]
-
-    if ops_cliente.empty or "DES_CIIU" not in ops_cliente.columns:
-        return "No disponible"
-
-    valor = ops_cliente["DES_CIIU"].dropna()
-
-    if valor.empty:
-        return "No disponible"
-
-    texto = str(valor.iloc[0]).strip()
-
-    if texto.lower() in ("nan", "sin informacion", "sin información", ""):
-        return "No disponible"
-
-    return texto
-
-
-def inferir_necesidades(fila_metricas: pd.Series) -> list:
-    """
-    A partir de las métricas de un cliente, infiere "etiquetas" de
-    necesidad que ayudan al trader a entender el contexto rápido.
-
-    Devuelve una lista de tuplas (texto, tipo_visual), donde
-    tipo_visual sirve para darle un color distinto en la interfaz.
-    """
+def inferir_necesidades(fila: pd.Series) -> list:
     necesidades = []
 
-    if fila_metricas["Dias_Sin_Operar"] > UMBRAL_DIAS_REACTIVACION:
-        necesidades.append(("Reactivación – cliente inactivo", "alerta"))
+    if fila['dias_sin_operar'] > UMBRAL_DIAS_REACTIVACION:
+        necesidades.append(('Reactivación – cliente inactivo', 'alerta'))
 
-    if fila_metricas["Pct_Mercado"] > 50:
-        necesidades.append(("Oportunidad – opera más con la competencia", "oportunidad"))
+    if fila['pct_mercado'] > 50:
+        necesidades.append(('Oportunidad – opera más con la competencia', 'oportunidad'))
 
-    if fila_metricas["N_Operaciones"] >= UMBRAL_OPERACIONES_FIEL and fila_metricas["Pct_Mercado"] < 30:
-        necesidades.append(("Cliente fiel – posible cross-sell", "fidelidad"))
+    if fila['n_operaciones'] >= UMBRAL_OPERACIONES_FIEL and fila['pct_mercado'] < 30:
+        necesidades.append(('Cliente fiel – posible cross-sell', 'fidelidad'))
 
-    if fila_metricas["N_Operaciones"] == 1:
-        necesidades.append(("Cliente nuevo – seguimiento inicial", "nuevo"))
+    if fila['n_operaciones'] == 1:
+        necesidades.append(('Cliente nuevo – seguimiento inicial', 'nuevo'))
 
     if not necesidades:
-        necesidades.append(("Sin alertas urgentes", "neutral"))
+        necesidades.append(('Sin alertas urgentes', 'neutral'))
 
     return necesidades
 
 
 # ===================================================================
-# 5. RANKINGS TOP N — clientes más activos por moneda y por producto
+# 7. RANKINGS
 # ===================================================================
 
 def ranking_clientes_por_moneda(df_trader: pd.DataFrame, monedas: list, top_n: int = 5) -> pd.DataFrame:
-    """
-    Devuelve el ranking de los clientes (NIT) con más operaciones en
-    las monedas indicadas (ej: ['USD/COP', 'EUR/COP']).
+    cols_vacias = ['nit', 'moneda', 'n_operaciones']
+    if df_trader.empty or 'moneda' not in df_trader.columns:
+        return pd.DataFrame(columns=cols_vacias)
 
-    A diferencia de un conteo simple, aquí se agrupa por
-    (Cliente, Moneda), de modo que cada fila del ranking indica
-    CLARAMENTE en qué moneda específica tiene esas operaciones
-    ese cliente. Si un cliente opera en varias monedas, aparecerá
-    una fila por cada combinación Cliente-Moneda.
-
-    Columnas devueltas: NIT, Moneda, N_Operaciones
-    Ordenado de mayor a menor N_Operaciones (Top N).
-    """
-    columnas_vacias = ["NIT", "Moneda", "N_Operaciones"]
-
-    if df_trader.empty or "Moneda" not in df_trader.columns:
-        return pd.DataFrame(columns=columnas_vacias)
-
-    filtrado = df_trader[df_trader["Moneda"].isin(monedas)]
-
+    filtrado = df_trader[df_trader['moneda'].isin(monedas)]
     if filtrado.empty:
-        return pd.DataFrame(columns=columnas_vacias)
+        return pd.DataFrame(columns=cols_vacias)
 
-    ranking = (
-        filtrado.groupby(["NIT", "Moneda"])
+    return (
+        filtrado.groupby(['nit', 'moneda'])
         .size()
-        .reset_index(name="N_Operaciones")
-        .sort_values("N_Operaciones", ascending=False)
+        .reset_index(name='n_operaciones')
+        .sort_values('n_operaciones', ascending=False)
         .head(top_n)
         .reset_index(drop=True)
     )
-
-    return ranking
 
 
 def ranking_clientes_por_producto(df_trader: pd.DataFrame, productos: list, top_n: int = 5) -> pd.DataFrame:
-    """
-    Devuelve el ranking de los clientes (NIT) con más operaciones en
-    los productos indicados (ej: ['SPOT', 'FORWARD']).
+    cols_vacias = ['nit', 'producto', 'n_operaciones']
+    if df_trader.empty or 'producto' not in df_trader.columns:
+        return pd.DataFrame(columns=cols_vacias)
 
-    A diferencia de un conteo simple, aquí se agrupa por
-    (Cliente, Producto), de modo que cada fila del ranking indica
-    CLARAMENTE en qué producto específico tiene esas operaciones
-    ese cliente. Si un cliente opera en varios productos, aparecerá
-    una fila por cada combinación Cliente-Producto.
-
-    Columnas devueltas: NIT, Producto, N_Operaciones
-    Ordenado de mayor a menor N_Operaciones (Top N).
-    """
-    columnas_vacias = ["NIT", "Producto", "N_Operaciones"]
-
-    if df_trader.empty or "Producto" not in df_trader.columns:
-        return pd.DataFrame(columns=columnas_vacias)
-
-    filtrado = df_trader[df_trader["Producto"].isin(productos)]
-
+    filtrado = df_trader[df_trader['producto'].isin(productos)]
     if filtrado.empty:
-        return pd.DataFrame(columns=columnas_vacias)
+        return pd.DataFrame(columns=cols_vacias)
 
-    ranking = (
-        filtrado.groupby(["NIT", "Producto"])
+    return (
+        filtrado.groupby(['nit', 'producto'])
         .size()
-        .reset_index(name="N_Operaciones")
-        .sort_values("N_Operaciones", ascending=False)
+        .reset_index(name='n_operaciones')
+        .sort_values('n_operaciones', ascending=False)
         .head(top_n)
         .reset_index(drop=True)
     )
 
-    return ranking
-
 
 # ===================================================================
-# 6. FUNCIÓN PRINCIPAL — todo en un solo paso
+# 8. FUNCIÓN PRINCIPAL
 # ===================================================================
 
-def generar_priorizacion(df_trader: pd.DataFrame) -> pd.DataFrame:
+def generar_priorizacion(
+    df_trader: pd.DataFrame,
+    df_predicciones: pd.DataFrame = None,
+    modo: str = 'historico',  # 'historico', 'ml', 'combinado'
+) -> pd.DataFrame:
     """
-    Punto de entrada único: recibe las operaciones de un trader y
-    devuelve un DataFrame, una fila por cliente, con:
-
-        - Todas las métricas (montos, días, operaciones, % mercado)
-        - El puntaje de prioridad (0-100)
-        - La recomendación de oferta ya en texto
-        - Las necesidades inferidas
-
-    Ordenado de mayor a menor prioridad (el #1 es a quien llamar primero).
+    modo='historico'  → ordena por puntaje histórico (montos, días, frecuencia)
+    modo='ml'         → ordena por score_prioridad del modelo
+    modo='combinado'  → combina ambos (60% ML + 40% histórico)
     """
     if df_trader.empty:
         return pd.DataFrame()
 
     df_metricas = calcular_metricas_por_cliente(df_trader)
-    df_puntaje = calcular_puntaje_prioridad(df_metricas)
+    df_puntaje  = calcular_puntaje_prioridad(df_metricas)
 
-    # Agregar recomendación de oferta, necesidades y sector económico
-    sugerencias = []
-    necesidades_lista = []
-    sectores = []
+    if modo == 'ml' and df_predicciones is not None and not df_predicciones.empty:
+        pred_cols = df_predicciones[['nit', 'prob_opera_7d', 'producto_predicho', 'score_prioridad']].copy()
+        pred_cols['nit'] = pred_cols['nit'].astype(str)
+        df_puntaje['nit'] = df_puntaje['nit'].astype(str)
+        df_puntaje = df_puntaje.merge(pred_cols, on='nit', how='left')
+        df_puntaje = df_puntaje.sort_values('score_prioridad', ascending=False).reset_index(drop=True)
+
+    elif modo == 'combinado' and df_predicciones is not None:
+        df_puntaje = calcular_score_combinado(df_puntaje, df_predicciones)
+
+    else:
+        # modo historico — agregar columnas ML vacías para consistencia
+        df_puntaje['prob_opera_7d']    = None
+        df_puntaje['producto_predicho'] = None
+        df_puntaje['score_prioridad']  = None
+
+    # Agregar recomendación, necesidades para cada cliente
+    sugerencias      = []
+    necesidades_list = []
 
     for _, fila in df_puntaje.iterrows():
-        recomendacion = calcular_recomendacion_oferta(df_trader, fila["NIT"])
-        sugerencias.append(texto_sugerencia_oferta(recomendacion))
-        necesidades_lista.append(inferir_necesidades(fila))
-        sectores.append(obtener_sector_economico(df_trader, fila["NIT"]))
+        rec = calcular_recomendacion_oferta(df_trader, fila['nit'])
+        sugerencias.append(texto_sugerencia_oferta(rec))
+        necesidades_list.append(inferir_necesidades(fila))
 
-    df_puntaje["Sugerencia_Oferta"] = sugerencias
-    df_puntaje["Necesidades"] = necesidades_lista
-    df_puntaje["Sector_Economico"] = sectores
+    df_puntaje['sugerencia_oferta'] = sugerencias
+    df_puntaje['necesidades']       = necesidades_list
 
     return df_puntaje
